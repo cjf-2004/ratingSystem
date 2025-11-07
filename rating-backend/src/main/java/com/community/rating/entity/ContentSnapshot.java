@@ -38,10 +38,10 @@ public class ContentSnapshot {
     private LocalDateTime publishTime;
 
     /**
-     * knowledge_tag: 帖子所属领域
+     * area_id: 帖子所属领域
      */
-    @Column(name = "knowledge_tag", nullable = false, length = 50)
-    private String knowledgeTag;
+    @Column(name = "area_id")
+    private Integer areaId;
 
     /**
      * post_length_level: 帖子长度分级 (1, 2, 3)

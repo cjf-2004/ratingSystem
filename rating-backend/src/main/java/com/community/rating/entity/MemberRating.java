@@ -2,7 +2,7 @@ package com.community.rating.entity;
 
 import jakarta.persistence.*;
 import java.io.Serializable;
-import java.time.LocalDateTime;
+import java.time.LocalDate;
 import java.math.BigDecimal; // 导入 BigDecimal
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -31,12 +31,12 @@ public class MemberRating implements Serializable {
     @Column(name = "member_id", nullable = false)
     private Long memberId;
 
-    // 数据库中的列名: knowledge_area_id
-    @Column(name = "knowledge_area_id", nullable = false)
-    private Long knowledgeAreaId;
+    // 数据库中的列名: area_id
+    @Column(name = "area_id")
+    private Integer areaId; //
 
-    // 数据库中的列名: des_score。使用 BigDecimal 匹配 DECIMAL(10, 2)
-    @Column(name = "des_score", nullable = false, precision = 10, scale = 2)
+    // 数据库中的列名: des_score。使用 BigDecimal 匹配 DECIMAL(12, 4)
+    @Column(name = "des_score", nullable = false, precision = 12, scale = 4)
     private BigDecimal desScore;
 
     // 数据库中的列名: rating_level
@@ -45,7 +45,7 @@ public class MemberRating implements Serializable {
     
     // 数据库中的列名: update_date
     @Column(name = "update_date")
-    private LocalDateTime updateDate;
+    private LocalDate updateDate;
     
     // 注意：所有的 Getter, Setter, 构造函数都由 Lombok 自动生成，不再需要手动编写。
 }
