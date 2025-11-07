@@ -4,9 +4,10 @@ package com.community.rating.repository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository; // 导入 Repository
 import java.util.List;
+import com.community.rating.entity.AchievementStatus;
 
 @Repository // 添加 @Repository
-public interface AchievementStatus_AchievementDefinition_Repository extends org.springframework.data.repository.Repository<Object, Long> {
+public interface AchievementStatus_AchievementDefinition_Repository extends org.springframework.data.repository.Repository<AchievementStatus, Long> {
     
     // 联合查询: findTopAchievementsStats()
     @Query(value = "SELECT " +

@@ -4,9 +4,10 @@ package com.community.rating.repository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository; // 导入 Repository
 import java.util.List;
+import com.community.rating.entity.Member;
 
 @Repository
-public interface Member_MemberRating_KnowledgeArea_Repository extends org.springframework.data.repository.Repository<Object, Long> {
+public interface Member_MemberRating_KnowledgeArea_Repository extends org.springframework.data.repository.Repository<Member, Long> {
 
     // 【关键修改】修改 JOIN 条件中的字段名：knowledgearea -> area_id
     @Query(value = "SELECT " +
