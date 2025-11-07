@@ -9,7 +9,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import java.io.Serializable;
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import java.time.LocalDate;
 
 /**
  * MemberRating Entity: 成员评级表
@@ -32,23 +32,21 @@ public class MemberRating implements Serializable {
     @Column(name = "member_id", nullable = false)
     private Long memberId;
 
-    /**
-     * area_id: 知识领域 ID (Foreign Key)
-     */
-    @Column(name = "area_id", nullable = false)
-    private Integer areaId; // 核心变更：替换 knowledge_tag
-    
-    // 阶段二计算结果：领域专精度得分 (Domain Expertise Score)
+    // 数据库中的列名: area_id
+    @Column(name = "area_id")
+    private Integer areaId; 
+
+    // 数据库中的列名: des_score。使用 BigDecimal 匹配 DECIMAL(12, 4)
     @Column(name = "des_score", nullable = false, precision = 12, scale = 4)
     private BigDecimal desScore;
     
     // 最终评级等级 (L1-L5)
     @Column(name = "rating_level", nullable = false, length = 2)
     private String ratingLevel;
-
-    /**
-     * update_date: 记录本次评级的计算日期。
-     */
-    @Column(name = "update_date", nullable = false)
-    private LocalDateTime updateDate = LocalDateTime.now(); 
+    
+    // 数据库中的列名: update_date
+    @Column(name = "update_date")
+    private LocalDate updateDate;
+    
+    // 注意：所有的 Getter, Setter, 构造函数都由 Lombok 自动生成，不再需要手动编写。
 }
