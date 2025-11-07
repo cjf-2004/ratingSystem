@@ -21,7 +21,7 @@ public class RatingService {
      * @return 评级列表（已排序）
      */
     public List<MemberRating> getTopRatingsByArea(Integer areaId) {
-        return ratingRepository.findByKnowledgeAreaIdOrderByDesScoreDesc(areaId);
+        return ratingRepository.findByAreaIdOrderByDesScoreDesc(areaId);
     }
 
     /**
