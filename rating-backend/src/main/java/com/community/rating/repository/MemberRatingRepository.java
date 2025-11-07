@@ -6,6 +6,7 @@ import org.springframework.stereotype.Repository;
 import org.springframework.data.jpa.repository.Query;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 
 @Repository
 public interface MemberRatingRepository extends JpaRepository<MemberRating, Long> {
@@ -20,6 +21,19 @@ public interface MemberRatingRepository extends JpaRepository<MemberRating, Long
      * 根据成员 ID 查询其在所有领域的评级
      */
     List<MemberRating> findByMemberId(Long memberId);
+
+    /**
+     * 用于检查和更新特定成员/领域的评级记录 (Find or Create 场景)。
+     * @param memberId 成员 ID
+     * @param areaId 领域 ID
+     * @return 匹配的评级记录
+     */
+    Optional<MemberRating> findByMemberIdAndAreaId(Long memberId, Integer areaId);
+
+    /**
+     * 用于获取特定成员的所有领域评级（如果有需要）。
+     */
+    List<MemberRating> findAllByMemberId(Long memberId);
     // MemberRating (单表): findMaxUpdateDate()
     @Query("SELECT MAX(m.updateDate) FROM MemberRating m")
     LocalDate findMaxUpdateDate();

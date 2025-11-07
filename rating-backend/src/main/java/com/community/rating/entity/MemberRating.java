@@ -1,33 +1,34 @@
 package com.community.rating.entity;
 
-import jakarta.persistence.*;
-import java.io.Serializable;
-import java.time.LocalDate;
-import java.math.BigDecimal; // 导入 BigDecimal
 import lombok.Data;
-import lombok.NoArgsConstructor;
-import lombok.AllArgsConstructor;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
+import jakarta.persistence.Column;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import java.io.Serializable;
+import java.math.BigDecimal;
+import java.time.LocalDate;
 
 /**
- * MemberRating 实体类，对应数据库中的 MemberRating 表。
- * 使用 Lombok 注解 (@Data, @NoArgsConstructor, @AllArgsConstructor) 
- * 自动生成 Getter, Setter, toString, hashCode, equals 和构造函数，
- * 大大简化了代码。
+ * MemberRating Entity: 成员评级表
+ * 已更新：使用 area_id (Integer) 替代 knowledge_tag (String)。
+ * 主键调整为 rating_id (BIGINT) 并假设自增。
  */
 @Entity
-@Table(name = "memberrating") // 明确指定表名
-@Data // 自动生成 Getter, Setter, toString, equals, hashCode
-@NoArgsConstructor // 自动生成无参构造函数 (JPA 必需)
-@AllArgsConstructor // 自动生成包含所有字段的构造函数 (可选，方便实例化)
+@Data
+@Table(name = "memberrating")
 public class MemberRating implements Serializable {
 
-    // 数据库中的列名: rating_id
+    /**
+     * rating_id: 评级记录唯一 ID (Primary Key)
+     */
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @GeneratedValue(strategy = GenerationType.IDENTITY) // 假设数据库自增
     @Column(name = "rating_id")
-    private Long ratingId;
+    private Long ratingId; 
 
-    // 数据库中的列名: member_id
     @Column(name = "member_id", nullable = false)
     private Long memberId;
 
@@ -38,9 +39,9 @@ public class MemberRating implements Serializable {
     // 数据库中的列名: des_score。使用 BigDecimal 匹配 DECIMAL(12, 4)
     @Column(name = "des_score", nullable = false, precision = 12, scale = 4)
     private BigDecimal desScore;
-
-    // 数据库中的列名: rating_level
-    @Column(name = "rating_level", nullable = false, length = 10)
+    
+    // 最终评级等级 (L1-L5)
+    @Column(name = "rating_level", nullable = false, length = 2)
     private String ratingLevel;
     
     // 数据库中的列名: update_date
