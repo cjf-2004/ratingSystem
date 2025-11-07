@@ -33,7 +33,7 @@ public class MemberRating implements Serializable {
 
     // 数据库中的列名: area_id
     @Column(name = "area_id")
-    private Integer areaId; //
+    private Integer areaId; 
 
     // 数据库中的列名: des_score。使用 BigDecimal 匹配 DECIMAL(12, 4)
     @Column(name = "des_score", nullable = false, precision = 12, scale = 4)

@@ -22,7 +22,7 @@ public class SystemOverviewController {
      *
      * @return 封装在 CommonResponse 中的 SystemOverviewDTO
      */
-    @GetMapping("/system-overview")
+    @GetMapping("/SystemOverview")
     public ResponseEntity<CommonResponse<SystemOverviewDTO>> getSystemOverview() {
         
         // 1. 调用 Service 层获取业务数据
