@@ -14,4 +14,7 @@ public interface MemberRepository extends JpaRepository<Member, Long> {
     // Spring Data JPA 会自动提供 findById, save, existsById 等方法
     // ID 类型已更改为 Long
     Optional<Member> findById(Long memberId);
+    
+    // 根据名字模糊搜索（不区分大小写）
+    java.util.List<Member> findByNameContainingIgnoreCase(String namePart);
 }
