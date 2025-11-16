@@ -10,6 +10,7 @@ import com.community.rating.repository.ContentSnapshotRepository;
 import com.community.rating.repository.MemberRatingRepository;
 import com.community.rating.repository.KnowledgeAreaRepository;
 import com.community.rating.repository.MemberRepository;
+import com.community.rating.service.AchievementDetectionService;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -44,6 +45,7 @@ public class RatingCalculationService {
     private final MemberRatingRepository memberRatingRepository;
     private final KnowledgeAreaRepository knowledgeAreaRepository;
     private final MemberRepository memberRepository; // 新增注入 MemberRepository
+    private final AchievementDetectionService achievementDetectionService;
     
     // 缓存：用于存储 knowledgeTag -> areaId 的映射，避免重复查询数据库
     private final Map<String, Integer> tagToIdCache = new ConcurrentHashMap<>();
@@ -53,13 +55,15 @@ public class RatingCalculationService {
         ContentSnapshotRepository contentSnapshotRepository,
         MemberRatingRepository memberRatingRepository,
         KnowledgeAreaRepository knowledgeAreaRepository,
-        MemberRepository memberRepository) // 新增构造参数
+        MemberRepository memberRepository,
+        AchievementDetectionService achievementDetectionService) // 新增构造参数
     {
         this.forumDataSimulation = forumDataSimulation;
         this.contentSnapshotRepository = contentSnapshotRepository;
         this.memberRatingRepository = memberRatingRepository;
         this.knowledgeAreaRepository = knowledgeAreaRepository;
         this.memberRepository = memberRepository; // 新增赋值
+        this.achievementDetectionService = achievementDetectionService;
     }
     
     /**
@@ -100,6 +104,13 @@ public class RatingCalculationService {
         
         updateAllMemberRankings(contentDTOsWithCIS);
         
+        // 成就检测：在评级计算完成后立即运行，保证成就依据最新评级/快照数据
+        try {
+            achievementDetectionService.detectAndPersistAchievements();
+        } catch (Exception ex) {
+            log.error("成就检测执行失败: {}", ex.getMessage(), ex);
+        }
+
         log.info("--- 评级定时计算任务执行完毕。---");
     }
 

@@ -1,6 +1,7 @@
 package com.community.rating.controller;
 
 import com.community.rating.dto.MemberDTO;
+import com.community.rating.dto.CommonResponse;
 import com.community.rating.service.MemberService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -22,25 +23,25 @@ public class MemberController {
     }
 
     @GetMapping("/ranking")
-    public ResponseEntity<List<MemberDTO>> getMemberRankingList(@RequestParam(required = false) Integer count,
-                                                                 @RequestParam(required = false) String domain,
-                                                                 @RequestParam(required = false, name = "sort_by") String sortBy) {
+    public ResponseEntity<CommonResponse<List<MemberDTO>>> getMemberRankingList(@RequestParam(required = false) Integer count,
+                                                                                 @RequestParam(required = false) String domain,
+                                                                                 @RequestParam(required = false, name = "sort_by") String sortBy) {
         List<MemberDTO> list = memberService.getMemberRankingList(count, domain, sortBy);
-        return ResponseEntity.ok(list);
+        return ResponseEntity.ok(CommonResponse.success(list));
     }
 
     @GetMapping("/{member_id}")
-    public ResponseEntity<MemberDTO> getMember(@PathVariable("member_id") Long memberId) {
+    public ResponseEntity<CommonResponse<MemberDTO>> getMember(@PathVariable("member_id") Long memberId) {
         MemberDTO dto = memberService.getMember(memberId);
         // 根据需求：id不存在时返回空值（这里返回 200 + null body）
-        return ResponseEntity.ok(dto);
+        return ResponseEntity.ok(CommonResponse.success(dto));
     }
 
     @GetMapping("/search")
-    public ResponseEntity<List<MemberDTO>> searchMembers(@RequestParam String keyword,
-                                                         @RequestParam(required = false) String domain,
-                                                         @RequestParam(required = false) Integer count) {
+    public ResponseEntity<CommonResponse<List<MemberDTO>>> searchMembers(@RequestParam String keyword,
+                                                                         @RequestParam(required = false) String domain,
+                                                                         @RequestParam(required = false) Integer count) {
         List<MemberDTO> list = memberService.searchMembers(keyword, domain, count);
-        return ResponseEntity.ok(list);
+        return ResponseEntity.ok(CommonResponse.success(list));
     }
 }
