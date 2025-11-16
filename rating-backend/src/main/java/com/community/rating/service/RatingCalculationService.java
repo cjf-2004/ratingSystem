@@ -19,6 +19,7 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
@@ -262,7 +263,7 @@ public class RatingCalculationService {
         // 设置新值并保存
         entity.setDesScore(desScore);
         entity.setRatingLevel(ratingLevel);
-        entity.setUpdateDate(LocalDateTime.now()); 
+        entity.setUpdateDate(LocalDate.now()); 
         
         memberRatingRepository.save(entity);
         
