@@ -89,7 +89,7 @@ public class RatingCalculationService {
     /**
      * 接口：每日/定时执行全量评级计算。
      */
-    @Scheduled(fixedRate = 300000) // 每 5 分钟执行一次
+    @Scheduled(fixedRate = 300000 * 3) // 每 15 分钟执行一次
     @Transactional 
     public void executeDailyRatingCalculation() {
         // 1. 确保标签映射是最新
