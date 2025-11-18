@@ -26,7 +26,7 @@ public class ProgressBar {
      * @param totalSteps 总步骤数
      */
     public ProgressBar(String taskName, int totalSteps) {
-        this(taskName, totalSteps, 5); // 默认每5%更新一次
+        this(taskName, totalSteps, 1); // 修改为每1%更新一次
     }
 
     /**
