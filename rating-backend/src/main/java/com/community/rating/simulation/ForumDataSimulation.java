@@ -579,11 +579,10 @@ public class ForumDataSimulation {
      * @return 内容快照列表（DTOs）
      */
     public List<Map<String, Object>> getContentSnapshot() {
-          log.info("【评级系统 PULL】拉取内容快照 (全量)。 useStaticTestData={}", useStaticTestData);
-          if (useStaticTestData) return getStaticContentSnapshot();
-          return contentDB.values().stream()
-              .map(this::mapContentRecordToSnapshot) // 使用方法引用，明确类型
-              .collect(Collectors.toList());
+         log.info("【评级系统 PULL】拉取内容快照 (全量)。");
+         return contentDB.values().stream()
+                .map(this::mapContentRecordToSnapshot) // 使用方法引用，明确类型
+                .collect(Collectors.toList());
     }
 
     /**
@@ -592,8 +591,7 @@ public class ForumDataSimulation {
      * @return 成员快照列表（DTOs）
      */
     public List<Map<String, Object>> getMemberSnapshot() {
-        log.info("【评级系统 PULL】拉取成员快照 (全量)。 useStaticTestData={}", useStaticTestData);
-        if (useStaticTestData) return getStaticMemberSnapshot();
+        log.info("【评级系统 PULL】拉取成员快照 (全量)。");
         return memberDB.values().stream()
                .map(m -> Map.<String, Object>of(
                        "member_id", m.id,
