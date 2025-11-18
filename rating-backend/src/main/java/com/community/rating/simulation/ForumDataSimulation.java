@@ -22,7 +22,6 @@ import java.io.FileOutputStream;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
-import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
@@ -414,27 +413,8 @@ public class ForumDataSimulation {
             for (MemberRecord member : saveData.members()) {
                 memberDB.put(member.id, member);
             }
-            // 计算时间差
-            long days = ChronoUnit.DAYS.between(saveData.timestamp, NOW);
             for (ContentRecord content : saveData.contents()) {
-                if (days > 0) {
-                    contentDB.put(content.id, new ContentRecord(
-                            content.id,
-                            content.authorId,
-                            content.title,
-                            content.publishTime.plusDays(days),
-                            content.knowledgeTag,
-                            content.postLengthLevel,
-                            content.readCount,
-                            content.likeCount,
-                            content.commentCount,
-                            content.shareCount,
-                            content.collectCount,
-                            content.hateCount
-                    ));
-                } else {
-                    contentDB.put(content.id, content);
-                }
+                contentDB.put(content.id, content);
             }
             log.info("模拟数据已从 {} 文件加载。", SIMULATION_DATA_FILE);
         } catch (Exception e) {
