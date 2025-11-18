@@ -46,4 +46,12 @@ public interface MemberRatingRepository extends JpaRepository<MemberRating, Long
                    ") latest_ratings " +
                    "WHERE latest_ratings.rn = 1", nativeQuery = true)
     Double calculateAverageDesScoreOfLatestRatings();
+
+    // Return member_ids who have at least `minAreas` distinct areas with rating level >= L{minLevel}
+    @Query(value = "SELECT t.member_id FROM (SELECT mr.member_id, mr.area_id, mr.rating_level FROM memberrating mr WHERE (mr.rating_level LIKE 'L%') AND CAST(SUBSTRING(mr.rating_level,2) AS UNSIGNED) >= :minLevel GROUP BY mr.member_id, mr.area_id, mr.rating_level) t GROUP BY t.member_id HAVING COUNT(DISTINCT t.area_id) >= :minAreas", nativeQuery = true)
+    java.util.List<java.lang.Long> findMemberIdsWithMinAreasAtOrAboveLevel(int minLevel, int minAreas);
+
+    // Return member_ids who have any rating entry with rating_level >= L{level}
+    @Query(value = "SELECT DISTINCT mr.member_id FROM memberrating mr WHERE (mr.rating_level LIKE 'L%') AND CAST(SUBSTRING(mr.rating_level,2) AS UNSIGNED) >= :level", nativeQuery = true)
+    java.util.List<java.lang.Long> findMemberIdsWithAnyAreaAtOrAboveLevel(int level);
 }
