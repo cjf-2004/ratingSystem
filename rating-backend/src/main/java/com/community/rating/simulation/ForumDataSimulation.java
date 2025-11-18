@@ -44,7 +44,7 @@ public class ForumDataSimulation {
     private static final LocalDateTime NOW = LocalDateTime.now();
     private static final LocalDateTime START_TIME = NOW.minusDays(GENERATE_DAYS_RANGE);
     // 生成用户量
-    private static final int SIMULATE_USER_COUNT = 2000;
+    private static final int SIMULATE_USER_COUNT = 100;
     // 是否为保存模式
     private static final boolean IS_SAVE_MODE = true;
     // 是否为读取模式
@@ -391,29 +391,10 @@ public class ForumDataSimulation {
             for (MemberRecord member : saveData.members()) {
                 memberDB.put(member.id, member);
             }
-            // 计算时间差
-            long days = ChronoUnit.DAYS.between(saveData.timestamp, NOW);
             for (ContentRecord content : saveData.contents()) {
-                if (days > 0) {
-                    contentDB.put(content.id, new ContentRecord(
-                            content.id,
-                            content.authorId,
-                            content.title,
-                            content.publishTime.plusDays(days),
-                            content.knowledgeTag,
-                            content.postLengthLevel,
-                            content.readCount,
-                            content.likeCount,
-                            content.commentCount,
-                            content.shareCount,
-                            content.collectCount,
-                            content.hateCount
-                    ));
-                } else {
-                    contentDB.put(content.id, content);
-                }
+                contentDB.put(content.id, content);
             }
-            log.info("模拟数据已从 {} 文件加载。", SIMULATION_DATA_FILE);
+            log.info("模拟数据已从 {} 文件加载, 生成时间: {}。", SIMULATION_DATA_FILE, saveData.timestamp());
         } catch (Exception e) {
             log.error("加载模拟数据时出错: {}", e.getMessage());
         }
