@@ -5,10 +5,16 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.fasterxml.jackson.datatype.jsr310.deser.LocalDateTimeDeserializer;
 import com.fasterxml.jackson.datatype.jsr310.ser.LocalDateTimeSerializer;
 import lombok.Getter;
+import lombok.RequiredArgsConstructor;
 import org.antlr.v4.runtime.misc.Pair;
 import org.springframework.stereotype.Service;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import com.community.rating.repository.AchievementStatusRepository;
+import com.community.rating.repository.MemberRatingRepository;
+import com.community.rating.repository.MemberRepository;
+import com.community.rating.repository.ContentSnapshotRepository;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -21,7 +27,7 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
-
+import jakarta.annotation.PostConstruct;
 /**
  * 【重构组件】论坛系统模拟器：完全模拟外部论坛数据库和数据接口。
  * 职责：
@@ -31,8 +37,14 @@ import java.util.stream.Collectors;
  * 数据结构已严格对齐评级系统的 ContentSnapshot 和 Member 表要求。
  */
 @Service
+@RequiredArgsConstructor
 public class ForumDataSimulation {
 
+    // 注入所需的Repository接口
+    private final AchievementStatusRepository achievementStatusRepository;
+    private final MemberRatingRepository memberRatingRepository;
+    private final MemberRepository memberRepository;
+    private final ContentSnapshotRepository contentSnapshotRepository;
 
     // 知识领域映射 (使用 String 作为知识领域标签)
     private static final List<String> KNOWLEDGE_AREA_TAGS = List.of(
@@ -44,7 +56,7 @@ public class ForumDataSimulation {
     private static final LocalDateTime NOW = LocalDateTime.now();
     private static final LocalDateTime START_TIME = NOW.minusDays(GENERATE_DAYS_RANGE);
     // 生成用户量
-    private static final int SIMULATE_USER_COUNT = 2000;
+    private static final int SIMULATE_USER_COUNT = 100;
     // 是否为保存模式
     private static final boolean IS_SAVE_MODE = true;
     // 是否为读取模式
@@ -215,16 +227,27 @@ public class ForumDataSimulation {
             LocalDateTime timestamp
     ) {}
 
-    // --- 初始化 ---
-    public ForumDataSimulation() {
-//        // 初始化一些基础成员数据 (匹配 Member 表要求)
-//        memberDB.put(101L, new MemberRecord(101L, "Alice_Frontend", LocalDateTime.now().minusYears(1)));
-//        memberDB.put(102L, new MemberRecord(102L, "Bob_Backend", LocalDateTime.now().minusYears(2)));
-//        memberDB.put(103L, new MemberRecord(103L, "Charlie_FullStack", LocalDateTime.now().minusMonths(3)));
-//
-//        // 初始化一些内容 (匹配 ContentSnapshot 表要求)
-//        initializeContent(201L, 101L, "React 状态管理最佳实践", "前端开发", 3, LocalDateTime.now().minusDays(1));
-//        initializeContent(202L, 102L, "Spring Boot 性能优化", "后端开发", 2, LocalDateTime.now().minusHours(10));
+    // 初始化方法，由Spring在构造函数执行后自动调用
+    @PostConstruct
+    public void initialize() {
+        // 当不是读取模式时，清除并初始化数据库表
+        if (!IS_LOAD_MODE) {
+            log.info("开始清除并初始化数据库表...");
+            // 按依赖关系顺序清除表数据
+            achievementStatusRepository.deleteAll();
+            log.info("已清除 AchievementStatus 表");
+            
+            memberRatingRepository.deleteAll();
+            log.info("已清除 MemberRating 表");
+            
+            contentSnapshotRepository.deleteAll();
+            log.info("已清除 ContentSnapshot 表");
+            
+            memberRepository.deleteAll();
+            log.info("已清除 Member 表");
+            log.info("数据库表清除完成");
+        }
+
         configureObjectMapper();
 
         createFilesIfNotExist();
