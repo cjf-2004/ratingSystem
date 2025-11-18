@@ -5,6 +5,7 @@ import com.community.rating.entity.AchievementDefinition;
 import com.community.rating.entity.AchievementStatus;
 import com.community.rating.repository.AchievementDefinitionRepository;
 import com.community.rating.repository.AchievementStatusRepository;
+import com.community.rating.util.ProgressBar;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.slf4j.Logger;
@@ -40,10 +41,18 @@ public class AchievementDetectionService {
     @Transactional
     public void detectAndPersistAchievements() {
         log.info("Achievement detection started.");
+        
+        // 创建进度条，以规则数量为总步骤
+        ProgressBar progressBar = new ProgressBar("成就检测", rules.size());
+        int awardedCount = 0;
+        
         for (AchievementRule rule : rules) {
             String key = rule.getAchievementKey();
             List<Long> memberIds = rule.detect();
-            if (memberIds == null || memberIds.isEmpty()) continue;
+            if (memberIds == null || memberIds.isEmpty()) {
+                progressBar.step();
+                continue;
+            }
 
             for (Long memberId : memberIds) {
                 if (memberId == null) continue;
@@ -65,8 +74,13 @@ public class AchievementDetectionService {
                 // }
 
                 statusRepository.save(s);
+                awardedCount++;
             }
+            
+            progressBar.step(); // 每处理一个规则步进一次
         }
-        log.info("Achievement detection finished.");
+        
+        progressBar.complete(); // 完成进度条
+        log.info("Achievement detection finished. Awarded {} achievements.", awardedCount);
     }
 }

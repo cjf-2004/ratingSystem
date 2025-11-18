@@ -1,5 +1,8 @@
 package com.community.rating.service;
 
+// 保留原有的imports，添加ProgressBar的import
+import com.community.rating.util.ProgressBar;
+
 import com.community.rating.simulation.ForumDataSimulation;
 import com.community.rating.dto.ContentDataDTO;
 import com.community.rating.entity.ContentSnapshot;
@@ -86,7 +89,7 @@ public class RatingCalculationService {
     /**
      * 接口：每日/定时执行全量评级计算。
      */
-    @Scheduled(fixedRate = 30000)
+    @Scheduled(fixedRate = 300000) // 每 5 分钟执行一次
     @Transactional 
     public void executeDailyRatingCalculation() {
         // 1. 确保标签映射是最新
@@ -103,15 +106,18 @@ public class RatingCalculationService {
         log.info("--- 2. 开始执行【成员领域专精度得分 (DES)】计算任务 ---");
         
         updateAllMemberRankings(contentDTOsWithCIS);
-        
+
+        log.info("--- 评级定时计算任务执行完毕。---");
+
         // 成就检测：在评级计算完成后立即运行，保证成就依据最新评级/快照数据
         try {
+            log.info("--- 3. 开始执行【成就检测】计算任务 ---");
             achievementDetectionService.detectAndPersistAchievements();
         } catch (Exception ex) {
             log.error("成就检测执行失败: {}", ex.getMessage(), ex);
         }
 
-        log.info("--- 评级定时计算任务执行完毕。---");
+        log.info("--- 成就检测任务执行完毕。---");
     }
 
     /**
@@ -121,7 +127,6 @@ public class RatingCalculationService {
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     private void syncMemberDataFromSnapshot() {
-        
         try {
             // 获取成员快照数据
             List<Map<String, Object>> memberSnapshotMaps = forumDataSimulation.getMemberSnapshot();
@@ -131,6 +136,9 @@ public class RatingCalculationService {
                 return;
             }
             
+            // 使用进度条
+            ProgressBar memberProgressBar = new ProgressBar("成员数据同步", memberSnapshotMaps.size());
+            
             int newMemberCount = 0;
             
             // 遍历所有成员快照，检查并添加新成员
@@ -139,6 +147,7 @@ public class RatingCalculationService {
                 
                 // 跳过无效的成员ID
                 if (memberId == null) {
+                    memberProgressBar.step();
                     continue;
                 }
                 
@@ -165,8 +174,11 @@ public class RatingCalculationService {
                     newMemberCount++;
                     log.debug("新增成员: ID={}, 名称={}", memberId, newMember.getName());
                 }
+                
+                memberProgressBar.step(); // 每处理一个成员步进一次
             }
             
+            memberProgressBar.complete(); // 完成进度条
             log.info("成员数据同步完成，新增 {} 个成员。", newMemberCount);
         } catch (Exception e) {
             log.error("成员数据同步失败: {}", e.getMessage(), e);
@@ -186,6 +198,9 @@ public class RatingCalculationService {
             return List.of();
         }
 
+        // 使用进度条
+        ProgressBar cisProgressBar = new ProgressBar("内容影响力分数计算", snapshotMaps.size());
+
         List<ContentDataDTO> calculatedContentDTOs = snapshotMaps.stream()
             .map(this::mapToDTO) // 包含标签到 ID 的转换
             .filter(dto -> dto.getAreaId() != null) // 过滤掉无法解析 areaId 的内容
@@ -195,10 +210,46 @@ public class RatingCalculationService {
                 
                 // 持久化 CIS 结果到 ContentSnapshot
                 saveCISToDatabase(dto);
+                
+                cisProgressBar.step(); // 每处理一个内容步进一次
             })
             .collect(Collectors.toList());
 
+        cisProgressBar.complete(); // 完成进度条
         return calculatedContentDTOs;
+    }
+
+    @Transactional
+    private void updateAllMemberRankings(List<ContentDataDTO> contentDTOsWithCIS) {
+        if (contentDTOsWithCIS.isEmpty()) {
+            log.warn("没有 CIS 数据，跳过 DES 计算。");
+            return;
+        }
+        
+        // 1. 按 (memberId, areaId) 对内容进行分组 (使用 Integer areaId)
+        Map<Long, Map<Integer, List<ContentDataDTO>>> memberContentGroup = contentDTOsWithCIS.stream()
+            .collect(Collectors.groupingBy(
+                ContentDataDTO::getMemberId,
+                Collectors.groupingBy(ContentDataDTO::getAreaId)
+            ));
+
+        // 计算总处理组数用于进度条
+        int totalGroups = memberContentGroup.values().stream()
+            .mapToInt(Map::size)
+            .sum();
+
+        // 使用进度条
+        ProgressBar desProgressBar = new ProgressBar("成员领域专精度得分计算", totalGroups);
+
+        // 2. 遍历每个成员和其在不同领域的内容，计算 DES
+        memberContentGroup.forEach((memberId, areaGroups) -> {
+            areaGroups.forEach((areaId, contents) -> {
+                calculateMemberDESAndSave(memberId, areaId, contents);
+                desProgressBar.step(); // 每处理一个成员-领域组合步进一次
+            });
+        });
+
+        desProgressBar.complete(); // 完成进度条
     }
 
     /**
@@ -229,30 +280,6 @@ public class RatingCalculationService {
         log.debug("保存 CIS 结果到 DB. ContentID: {}, CIS: {}", dto.getContentId(), dto.getCisScore().toPlainString());
     }
 
-    /**
-     * 职责：基于已计算的 CIS DTOs 计算 DES 并持久化到 MemberRatingRepository。
-     */
-    @Transactional
-    private void updateAllMemberRankings(List<ContentDataDTO> contentDTOsWithCIS) {
-        if (contentDTOsWithCIS.isEmpty()) {
-            log.warn("没有 CIS 数据，跳过 DES 计算。");
-            return;
-        }
-        
-        // 1. 按 (memberId, areaId) 对内容进行分组 (使用 Integer areaId)
-        Map<Long, Map<Integer, List<ContentDataDTO>>> memberContentGroup = contentDTOsWithCIS.stream()
-            .collect(Collectors.groupingBy(
-                ContentDataDTO::getMemberId,
-                Collectors.groupingBy(ContentDataDTO::getAreaId)
-            ));
-
-        // 2. 遍历每个成员和其在不同领域的内容，计算 DES
-        memberContentGroup.forEach((memberId, areaGroups) -> {
-            areaGroups.forEach((areaId, contents) -> {
-                calculateMemberDESAndSave(memberId, areaId, contents);
-            });
-        });
-    }
 
     /**
      * 职责：计算特定成员在特定领域 K 的 DES 分数和评级，并持久化。
