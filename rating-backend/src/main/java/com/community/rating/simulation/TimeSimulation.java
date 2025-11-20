@@ -29,7 +29,6 @@ public class TimeSimulation {
         private static final DateTimeFormatter FMT = DateTimeFormatter.ISO_LOCAL_DATE_TIME;
         private static final Path STORE = Paths.get(STORE_FOLDER, STORE_FILE);
 
-        private final Object lock = new Object();
         private LocalDateTime current;
 
         VirtualTimeProvider() {
@@ -40,21 +39,17 @@ public class TimeSimulation {
                 return t;
             });
             scheduler.scheduleAtFixedRate(() -> {
-                synchronized (lock) {
-                    current = current.plusDays(1);
-                    try {
-                        persistToFile();
-                    } catch (IOException e) {
-                        System.err.println("Failed to persist virtual time: " + e.getMessage());
-                    }
+                current = current.plusDays(1);
+                try {
+                    persistToFile();
+                } catch (IOException e) {
+                    System.err.println("Failed to persist virtual time: " + e.getMessage());
                 }
             }, 5, 5, TimeUnit.MINUTES);
         }
 
         public LocalDateTime now() {
-            synchronized (lock) {
-                return current;
-            }
+            return current;
         }
 
         private void persistToFile() throws IOException {
