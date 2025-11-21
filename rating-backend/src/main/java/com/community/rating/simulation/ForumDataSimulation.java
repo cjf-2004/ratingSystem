@@ -10,11 +10,7 @@ import org.antlr.v4.runtime.misc.Pair;
 import org.springframework.stereotype.Service;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import com.community.rating.repository.AchievementStatusRepository;
-import com.community.rating.repository.MemberRatingRepository;
-import com.community.rating.repository.MemberRepository;
-import com.community.rating.repository.ContentSnapshotRepository;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -39,11 +35,7 @@ import jakarta.annotation.PostConstruct;
 @RequiredArgsConstructor
 public class ForumDataSimulation {
 
-    // 注入所需的Repository接口
-    private final AchievementStatusRepository achievementStatusRepository;
-    private final MemberRatingRepository memberRatingRepository;
-    private final MemberRepository memberRepository;
-    private final ContentSnapshotRepository contentSnapshotRepository;
+    private final JdbcTemplate jdbcTemplate;
 
     // 知识领域映射 (使用 String 作为知识领域标签)
     private static final List<String> KNOWLEDGE_AREA_TAGS = List.of(
@@ -232,19 +224,11 @@ public class ForumDataSimulation {
         // 当不是读取模式时，清除并初始化数据库表
         if (!IS_LOAD_MODE) {
             log.info("开始清除并初始化数据库表...");
-            // 按依赖关系顺序清除表数据
-            achievementStatusRepository.deleteAll();
-            log.info("已清除 AchievementStatus 表");
-            
-            memberRatingRepository.deleteAll();
-            log.info("已清除 MemberRating 表");
-            
-            contentSnapshotRepository.deleteAll();
-            log.info("已清除 ContentSnapshot 表");
-            
-            memberRepository.deleteAll();
-            log.info("已清除 Member 表");
-            log.info("数据库表清除完成");
+            long startTime = System.currentTimeMillis();
+            // 使用原生 SQL DELETE 清除表数据（按依赖关系顺序）
+            truncateTables();
+            long endTime = System.currentTimeMillis();
+            log.info("数据库表清除完成，耗时: {} ms", endTime - startTime);
         }
 
         configureObjectMapper();
@@ -258,6 +242,45 @@ public class ForumDataSimulation {
                 // 保存数据到文件
                 saveToFile();
             }
+        }
+    }
+
+    /**
+     * 使用原生 SQL 批量删除表数据（比 deleteAll() 快 10-100 倍）
+     * 按照外键依赖关系顺序删除：
+     * 1. AchievementStatus (依赖 Member 和 AchievementDefinition)
+     * 2. MemberRating (依赖 Member 和 KnowledgeArea)
+     * 3. ContentSnapshot (依赖 Member)
+     * 4. Member (基础表，最后删除)
+     */
+    private void truncateTables() {
+        try {
+            // 禁用外键检查（MySQL）
+            jdbcTemplate.execute("SET FOREIGN_KEY_CHECKS=0");
+            
+            // 按依赖关系删除表
+            String[] tables = {"achievementstatus", "memberrating", "contentsnapshot", "member"};
+            for (String table : tables) {
+                long startTime = System.currentTimeMillis();
+                int rowsDeleted = jdbcTemplate.update("DELETE FROM " + table);
+                long elapsed = System.currentTimeMillis() - startTime;
+                log.info("已删除 {} 表: {} 行，耗时: {} ms", table, rowsDeleted, elapsed);
+                
+                // 重置自增计数器（可选，根据 DB 类型调整）
+                jdbcTemplate.execute("ALTER TABLE " + table + " AUTO_INCREMENT=1");
+            }
+            
+            // 重新启用外键检查
+            jdbcTemplate.execute("SET FOREIGN_KEY_CHECKS=1");
+            log.info("表清除完成，已重新启用外键检查");
+        } catch (Exception e) {
+            log.error("清除表时出错: {}", e.getMessage(), e);
+            // 恢复外键检查
+            try {
+                jdbcTemplate.execute("SET FOREIGN_KEY_CHECKS=1");
+            } catch (Exception ignore) {
+            }
+            throw new RuntimeException("数据库表清除失败", e);
         }
     }
 
