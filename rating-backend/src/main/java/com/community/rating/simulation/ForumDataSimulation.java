@@ -55,7 +55,7 @@ public class ForumDataSimulation {
     private static final LocalDateTime NOW = LocalDateTime.now();
     private static final LocalDateTime START_TIME = NOW.minusDays(GENERATE_DAYS_RANGE);
     // 生成用户量
-    private static final int SIMULATE_USER_COUNT = 100;
+    private static final int SIMULATE_USER_COUNT = 2000;
     // 是否为保存模式
     private static final boolean IS_SAVE_MODE = true;
     // 是否为读取模式
