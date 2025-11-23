@@ -19,4 +19,13 @@ public interface AchievementStatus_AchievementDefinition_Repository extends org.
                    "ORDER BY COUNT(DISTINCT a.member_id) DESC " +
                    "LIMIT :limit", nativeQuery = true)
     List<Object[]> findTopAchievementsStats(int limit);
+
+    // 联查所有成就的定义信息，并 LEFT JOIN 统计达成人数。
+    @Query(value = "SELECT " +
+               "    d.achievement_key, d.name, d.type, d.trigger_condition_desc, " +
+               "    COUNT(DISTINCT a.member_id) AS achieved_count " +
+               "FROM achievementdefinition d " +
+               "LEFT JOIN achievementstatus a ON d.achievement_key = a.achievement_key " + // 使用 LEFT JOIN 保证所有定义都返回
+               "GROUP BY d.achievement_key, d.name, d.type, d.trigger_condition_desc", nativeQuery = true)
+    List<Object[]> findAllAchievementsWithStats();
 }
