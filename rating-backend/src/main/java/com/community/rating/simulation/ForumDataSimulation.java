@@ -44,7 +44,7 @@ public class ForumDataSimulation {
     // 模拟用户行为特征定义
     private static final int GENERATE_DAYS_RANGE = 300; // 生成数据的时间范围（天）, 需大于180
     // 起始和结束时间
-    private static final LocalDateTime NOW = LocalDateTime.now();
+    private static final LocalDateTime NOW = TimeSimulation.now();
     private static final LocalDateTime START_TIME = NOW.minusDays(GENERATE_DAYS_RANGE);
     // 生成用户量
     private static final int SIMULATE_USER_COUNT = 2000;
