@@ -17,7 +17,7 @@ public class TimeSimulation {
     // 全局实例
     private static final VirtualTimeProvider VIRTUAL_TIME_PROVIDER = new VirtualTimeProvider();
     // 时间模式
-    private static final boolean IS_REAL_TIME = true;
+    private static final boolean IS_REAL_TIME = false;
     // 获取当前时间
     public static LocalDateTime now() {
         return IS_REAL_TIME ? LocalDateTime.now() : VIRTUAL_TIME_PROVIDER.now();
@@ -28,7 +28,7 @@ public class TimeSimulation {
         private static final String STORE_FOLDER = "./simulation";
         private static final String STORE_FILE = "virtual_time.txt";
 
-        private static final int SPEED_MULTIPLIER = 60 * 24 / 5; // 5 分钟推进 1 天
+        private static final int SPEED_MULTIPLIER = 60 * 60 * 24 / 30; // 30 秒推进 1 天
 
         private static final DateTimeFormatter FMT = DateTimeFormatter.ISO_LOCAL_DATE_TIME;
         private static final Path STORE_DIR = Paths.get(STORE_FOLDER);

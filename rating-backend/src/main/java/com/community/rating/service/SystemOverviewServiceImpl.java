@@ -4,6 +4,7 @@ import com.community.rating.dto.SystemOverviewDTO;
 import com.community.rating.dto.TopAchievementDTO;
 import com.community.rating.dto.TopMemberDTO;
 import com.community.rating.repository.*;
+import com.community.rating.simulation.TimeSimulation;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -58,8 +59,8 @@ public class SystemOverviewServiceImpl implements SystemOverviewService {
         
         String lastUpdateTimeString = baseTime.format(ISO_FORMATTER); 
 
-        LocalDateTime startOfDay = LocalDate.now(ZoneOffset.UTC).atStartOfDay();
-        LocalDateTime thirtyDaysAgo = LocalDateTime.now(ZoneOffset.UTC).minusDays(30);
+        LocalDateTime startOfDay = TimeSimulation.now().toLocalDate().atStartOfDay();
+        LocalDateTime thirtyDaysAgo = TimeSimulation.now().minusDays(30);
 
         
         // --- 2. 核心统计数据获取 ---
