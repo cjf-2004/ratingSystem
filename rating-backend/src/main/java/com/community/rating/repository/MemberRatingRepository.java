@@ -54,4 +54,16 @@ public interface MemberRatingRepository extends JpaRepository<MemberRating, Long
     // Return member_ids who have any rating entry with rating_level >= L{level}
     @Query(value = "SELECT DISTINCT mr.member_id FROM memberrating mr WHERE (mr.rating_level LIKE 'L%') AND CAST(SUBSTRING(mr.rating_level,2) AS UNSIGNED) >= :level", nativeQuery = true)
     java.util.List<java.lang.Long> findMemberIdsWithAnyAreaAtOrAboveLevel(int level);
+
+    /**
+     * 查询评级分布：按 rating_level 分组统计每个等级的成员数（去重）
+     * 返回 [rating_level, count] 的列表
+     * 注意：同一成员可能在多个领域有评级，这里按成员数去重
+     */
+    @Query(value = "SELECT mr.rating_level, COUNT(DISTINCT mr.member_id) as level_count " +
+                   "FROM memberrating mr " +
+                   "WHERE mr.rating_level IS NOT NULL " +
+                   "GROUP BY mr.rating_level " +
+                   "ORDER BY mr.rating_level ASC", nativeQuery = true)
+    java.util.List<Object[]> getRatingDistribution();
 }

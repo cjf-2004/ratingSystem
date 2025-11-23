@@ -272,8 +272,14 @@ public class RatingCalculationService {
             .peek(dto -> {
                 long calcStart = System.nanoTime();
                 BigDecimal cisScore = ratingAlgorithm.calculateCIS(dto);
+                // 保证 CIS 不为负：如果计算结果为 null 或负数，映射为 0
+                if (cisScore == null) {
+                    cisScore = BigDecimal.ZERO;
+                } else if (cisScore.compareTo(BigDecimal.ZERO) < 0) {
+                    cisScore = BigDecimal.ZERO;
+                }
                 calculationTime[0] += (System.nanoTime() - calcStart) / 1_000_000;
-                dto.setCisScore(cisScore); 
+                dto.setCisScore(cisScore);
                 
                 // 转换为实体并收集，不立即保存
                 ContentSnapshot entity = convertToContentSnapshot(dto);
