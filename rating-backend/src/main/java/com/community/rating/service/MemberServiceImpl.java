@@ -1,6 +1,8 @@
 package com.community.rating.service;
 
 import com.community.rating.dto.MemberDTO;
+import com.community.rating.dto.MemberScoreHistoryDTO;
+import com.community.rating.dto.ScoreHistoryItemDTO;
 import com.community.rating.entity.KnowledgeArea;
 import com.community.rating.entity.Member;
 import com.community.rating.entity.MemberRating;
@@ -14,6 +16,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
@@ -92,30 +95,75 @@ public class MemberServiceImpl implements MemberService {
     }
 
     @Override
-    public MemberDTO getMember(Long member_id) {
-        if (member_id == null) return null;
+    public List<MemberScoreHistoryDTO> getMember(Long member_id) {
+        if (member_id == null) return new ArrayList<>();
         Optional<Member> mOpt = memberRepository.findById(member_id);
-        if (mOpt.isEmpty()) return null;
+        if (mOpt.isEmpty()) return new ArrayList<>();
 
-        Member m = mOpt.get();
-        MemberDTO dto = new MemberDTO();
-        dto.setMember_id(m.getMemberId());
-        dto.setMember_name(m.getName());
-        dto.setJoin_time(m.getJoinDate() != null ? m.getJoinDate().format(DateTimeFormatter.ISO_LOCAL_DATE) : null);
+        Member member = mOpt.get();
+        List<MemberScoreHistoryDTO> resultList = new ArrayList<>();
 
-        // get latest rating for this member
-        List<MemberRating> ratings = memberRatingRepository.findAllByMemberId(member_id);
-        if (!ratings.isEmpty()) {
-            MemberRating latest = ratings.stream().max(Comparator.comparing(MemberRating::getUpdateDate)).get();
-            dto.setLevel(latest.getRatingLevel());
-            dto.setScore(latest.getDesScore() != null ? latest.getDesScore().intValue() : null);
-            // map areaId -> areaName
-            if (latest.getAreaId() != null) {
-                knowledgeAreaRepository.findById(latest.getAreaId()).ifPresent(a -> dto.setMain_domain(a.getAreaName()));
-            }
+        // 获取成员在所有领域的所有评级记录
+        List<MemberRating> allRatings = memberRatingRepository.findAllByMemberId(member_id);
+        
+        // 按领域分组
+        Map<Integer, List<MemberRating>> ratingsByArea = allRatings.stream()
+                .filter(r -> r.getAreaId() != null)
+                .collect(Collectors.groupingBy(MemberRating::getAreaId));
+
+        // 为每个领域创建DTO
+        for (Map.Entry<Integer, List<MemberRating>> entry : ratingsByArea.entrySet()) {
+            Integer areaId = entry.getKey();
+            List<MemberRating> areaRatings = entry.getValue();
+            
+            // 获取领域名称
+            String areaName = knowledgeAreaRepository.findById(areaId)
+                    .map(KnowledgeArea::getAreaName)
+                    .orElse("未知领域");
+            
+            // 按更新日期降序排序，获取最新评级作为当前评级
+            areaRatings.sort(Comparator.comparing(MemberRating::getUpdateDate).reversed());
+            MemberRating latestRating = areaRatings.get(0);
+            
+            // 创建DTO并填充基础信息
+            MemberScoreHistoryDTO dto = new MemberScoreHistoryDTO();
+            dto.setMember_id(member.getMemberId());
+            dto.setMember_name(member.getName());
+            dto.setJoin_time(member.getJoinDate() != null ? 
+                    member.getJoinDate().format(DateTimeFormatter.ISO_LOCAL_DATE) : null);
+            
+            // 填充领域特定信息
+            dto.setMain_domain(areaName);
+            dto.setLevel(latestRating.getRatingLevel());
+            dto.setScore(latestRating.getDesScore() != null ? 
+                    latestRating.getDesScore().intValue() : null);
+            
+            // 创建历史分数记录列表
+            List<ScoreHistoryItemDTO> historyList = areaRatings.stream()
+                    .map(rating -> new ScoreHistoryItemDTO(
+                            rating.getUpdateDate() != null ? 
+                                    rating.getUpdateDate().format(DateTimeFormatter.ISO_LOCAL_DATE) : null,
+                            rating.getDesScore() != null ? 
+                                    rating.getDesScore().doubleValue() : null
+                    ))
+                    .collect(Collectors.toList());
+            
+            dto.setScore_history(historyList);
+            resultList.add(dto);
         }
 
-        return dto;
+        // 如果该成员没有任何评级记录，创建一个基本的DTO
+        if (resultList.isEmpty()) {
+            MemberScoreHistoryDTO basicDto = new MemberScoreHistoryDTO();
+            basicDto.setMember_id(member.getMemberId());
+            basicDto.setMember_name(member.getName());
+            basicDto.setJoin_time(member.getJoinDate() != null ? 
+                    member.getJoinDate().format(DateTimeFormatter.ISO_LOCAL_DATE) : null);
+            basicDto.setScore_history(new ArrayList<>());
+            resultList.add(basicDto);
+        }
+
+        return resultList;
     }
 
     @Override

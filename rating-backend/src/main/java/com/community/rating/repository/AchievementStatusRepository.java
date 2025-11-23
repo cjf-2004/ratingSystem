@@ -13,4 +13,7 @@ public interface AchievementStatusRepository extends JpaRepository<AchievementSt
     
     // 检查成员是否已领取某个成就
     boolean existsByMemberIdAndAchievementKey(Long memberId, String achievementKey);
+    
+    // 批量查询指定成就和成员列表中已存在的记录
+    java.util.List<AchievementStatus> findByAchievementKeyAndMemberIdIn(String achievementKey, java.util.List<Long> memberIds);
 }

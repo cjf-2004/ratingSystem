@@ -2,6 +2,7 @@ package com.community.rating.dto;
 
 import lombok.Data;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 系统概览数据传输对象
@@ -28,6 +29,9 @@ public class SystemOverviewDTO {
     
     // 平均等级（如"L2.8"）
     private String averageRating;
+    
+    // 评级分布百分比（等级名 -> 百分比，如 {"L1": 5.2, "L2": 12.5, "L3": 8.0}）
+    private Map<String, Double> ratingDistribution;
     
     // 顶级成员列表
     private List<TopMemberDTO> topMembers;

@@ -15,7 +15,9 @@ import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor 
@@ -68,6 +70,9 @@ public class SystemOverviewServiceImpl implements SystemOverviewService {
         Long activeMembers = contentSnapshotRepository.countDistinctMemberIdByPublishTimeAfter(thirtyDaysAgo);
         Double avgDesScore = memberRatingRepository.calculateAverageDesScoreOfLatestRatings();
         String formattedAverageRating = formatAverageRating(avgDesScore);
+        
+        // 计算评级分布百分比
+        Map<String, Double> ratingDistribution = calculateRatingDistribution(totalMembers);
 
 
         // --- 3. 列表数据获取与处理 ---
@@ -84,10 +89,41 @@ public class SystemOverviewServiceImpl implements SystemOverviewService {
         dto.setNewContentsToday(newContentsToday != null ? newContentsToday.intValue() : 0);
         dto.setNewAchievementsToday(newAchievementsToday != null ? newAchievementsToday.intValue() : 0);
         dto.setAverageRating(formattedAverageRating);
+        dto.setRatingDistribution(ratingDistribution);
         dto.setTopMembers(topMembers);
         dto.setTopAchievements(topAchievements);
 
         return dto;
+    }
+
+    /**
+     * 计算各评级等级的分布百分比
+     * @param totalMembers 总成员数
+     * @return Map<等级, 百分比>，例如 {"L1": 5.2, "L2": 12.5}
+     */
+    private Map<String, Double> calculateRatingDistribution(Long totalMembers) {
+        Map<String, Double> distribution = new LinkedHashMap<>();
+        
+        // 边界情况：成员为空
+        if (totalMembers == null || totalMembers == 0) {
+            return distribution;
+        }
+        
+        // 从数据库查询各等级的成员数
+        List<Object[]> rawData = memberRatingRepository.getRatingDistribution();
+        
+        for (Object[] row : rawData) {
+            String ratingLevel = (String) row[0];
+            Long levelCount = ((Number) row[1]).longValue();
+            
+            // 计算百分比（保留 1 位小数）
+            double percentage = (double) levelCount / totalMembers * 100.0;
+            percentage = Math.round(percentage * 10.0) / 10.0; // 保留 1 位小数
+            
+            distribution.put(ratingLevel, percentage);
+        }
+        
+        return distribution;
     }
 
     //计算平均等级，这里的bd只是大略的除以1000，还需要再定好等级规则后重新计算
