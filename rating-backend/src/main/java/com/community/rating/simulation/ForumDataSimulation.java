@@ -59,13 +59,21 @@ public class ForumDataSimulation {
     // 用户行为枚举
     private static final WeightedList<UserBehavior> SIMULATE_USER_BEHAVIORS = new WeightedList<>(List.of(
             new Pair<>(new UserBehavior(
+                    "沉默浏览型",
+                    new WeightedList<>(List.of(0, 2, 5), List.of(80, 15, 5)),
+                    new WeightedList<>(List.of(0), List.of(1)),
+                    new WeightedList<>(List.of(1, 2, 3), List.of(80, 15, 5)),
+                    new InteractionMetrics(200, 80, 0.005, 0.001, 0.001, 0.002, 0.005),
+                    Optional.empty()
+            ), 30),
+            new Pair<>(new UserBehavior(
                     "量产低质型",
                     new WeightedList<>(List.of(60, 90, 150), List.of(50, 35, 15)),
                     new WeightedList<>(List.of(0), List.of(1)),
                     new WeightedList<>(List.of(1, 2, 3), List.of(80, 18, 2)),
                     new InteractionMetrics(800, 250, 0.01, 0.002, 0.001, 0.003, 0.025),
                     Optional.empty()
-            ), 6),
+            ), 4),
             new Pair<>(new UserBehavior(
                     "稳健创作型",
                     new WeightedList<>(List.of(24, 36, 60), List.of(60, 30, 10)),
@@ -73,7 +81,7 @@ public class ForumDataSimulation {
                     new WeightedList<>(List.of(1, 2, 3), List.of(20, 60, 20)),
                     new InteractionMetrics(8000, 3000, 0.05, 0.015, 0.008, 0.012, 0.004),
                     Optional.of(new SpecialPostRules(0.01, 5.0, 1.6, 1.6, 1.6, 1.6, 1.6))
-            ), 22),
+            ), 15),
             new Pair<>(new UserBehavior(
                     "爆款拉动型",
                     new WeightedList<>(List.of(24, 36, 72), List.of(50, 40, 10)),
@@ -81,7 +89,7 @@ public class ForumDataSimulation {
                     new WeightedList<>(List.of(1, 2, 3), List.of(30, 50, 20)),
                     new InteractionMetrics(4000, 2500, 0.04, 0.01, 0.006, 0.01, 0.005),
                     Optional.of(new SpecialPostRules(0.08, 10.0, 1.8, 1.8, 1.8, 1.8, 1.8))
-            ), 12),
+            ), 8),
             new Pair<>(new UserBehavior(
                     "长文深度收藏型",
                     new WeightedList<>(List.of(12, 18, 30), List.of(70, 25, 5)),
@@ -89,7 +97,7 @@ public class ForumDataSimulation {
                     new WeightedList<>(List.of(1, 2, 3), List.of(5, 35, 60)),
                     new InteractionMetrics(5500, 2000, 0.05, 0.03, 0.012, 0.06, 0.003),
                     Optional.empty()
-            ), 8),
+            ), 6),
             new Pair<>(new UserBehavior(
                     "传播导向型",
                     new WeightedList<>(List.of(36, 48, 80), List.of(50, 35, 15)),
@@ -97,7 +105,7 @@ public class ForumDataSimulation {
                     new WeightedList<>(List.of(1, 2, 3), List.of(70, 25, 5)),
                     new InteractionMetrics(12000, 6000, 0.03, 0.006, 0.05, 0.006, 0.006),
                     Optional.empty()
-            ), 8),
+            ), 6),
             new Pair<>(new UserBehavior(
                     "讨论驱动型",
                     new WeightedList<>(List.of(18, 24, 36), List.of(60, 30, 10)),
@@ -105,7 +113,7 @@ public class ForumDataSimulation {
                     new WeightedList<>(List.of(1, 2, 3), List.of(10, 55, 35)),
                     new InteractionMetrics(4500, 2200, 0.035, 0.05, 0.008, 0.018, 0.007),
                     Optional.empty()
-            ), 8),
+            ), 6),
             new Pair<>(new UserBehavior(
                     "争议两极型",
                     new WeightedList<>(List.of(12, 16, 30), List.of(60, 30, 10)),
@@ -113,7 +121,7 @@ public class ForumDataSimulation {
                     new WeightedList<>(List.of(1, 2, 3), List.of(30, 50, 20)),
                     new InteractionMetrics(6000, 4000, 0.03, 0.05, 0.01, 0.01, 0.03),
                     Optional.of(new SpecialPostRules(0.2, 4.0, 2.0, 2.0, 2.0, 1.0, 2.0))
-            ), 5),
+            ), 4),
             new Pair<>(new UserBehavior(
                     "标题党低转化型",
                     new WeightedList<>(List.of(20, 30, 50), List.of(50, 35, 15)),
@@ -121,7 +129,7 @@ public class ForumDataSimulation {
                     new WeightedList<>(List.of(1, 2, 3), List.of(70, 25, 5)),
                     new InteractionMetrics(30000, 15000, 0.007, 0.002, 0.005, 0.001, 0.012),
                     Optional.empty()
-            ), 12),
+            ), 8),
             new Pair<>(new UserBehavior(
                     "单领域精品型",
                     new WeightedList<>(List.of(10, 15, 24), List.of(70, 25, 5)),
@@ -129,7 +137,7 @@ public class ForumDataSimulation {
                     new WeightedList<>(List.of(1, 2, 3), List.of(10, 40, 50)),
                     new InteractionMetrics(2500, 900, 0.04, 0.018, 0.012, 0.07, 0.002),
                     Optional.of(new SpecialPostRules(0.25, 3.0, 1.5, 1.5, 1.5, 2.0, 1.5))
-            ), 7),
+            ), 5),
             new Pair<>(new UserBehavior(
                     "单领域勤奋型",
                     new WeightedList<>(List.of(30, 45, 70), List.of(40, 40, 20)),
@@ -137,7 +145,7 @@ public class ForumDataSimulation {
                     new WeightedList<>(List.of(1, 2, 3), List.of(30, 60, 10)),
                     new InteractionMetrics(2000, 700, 0.025, 0.006, 0.004, 0.013, 0.005),
                     Optional.empty()
-            ), 12)
+            ), 8)
     ));
 
     private static final Logger log = LoggerFactory.getLogger(ForumDataSimulation.class);
