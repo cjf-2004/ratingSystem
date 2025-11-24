@@ -4,13 +4,12 @@ package com.community.rating.service;
 import com.community.rating.util.ProgressBar;
 
 import com.community.rating.simulation.ForumDataSimulation;
+import com.community.rating.simulation.TimeSimulation;
 import com.community.rating.dto.ContentDataDTO;
 import com.community.rating.entity.ContentSnapshot;
 import com.community.rating.entity.Member;
 import com.community.rating.entity.MemberRating;
 import com.community.rating.entity.KnowledgeArea;
-import com.community.rating.repository.ContentSnapshotRepository;
-import com.community.rating.repository.MemberRatingRepository;
 import com.community.rating.repository.KnowledgeAreaRepository;
 import com.community.rating.repository.MemberRepository;
 
@@ -23,7 +22,6 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
@@ -45,8 +43,6 @@ public class RatingCalculationService {
     private final ForumDataSimulation forumDataSimulation;
     private final RatingAlgorithm ratingAlgorithm = new RatingAlgorithm();
     
-    private final ContentSnapshotRepository contentSnapshotRepository;
-    private final MemberRatingRepository memberRatingRepository;
     private final KnowledgeAreaRepository knowledgeAreaRepository;
     private final MemberRepository memberRepository; // 新增注入 MemberRepository
     private final AchievementDetectionService achievementDetectionService;
@@ -57,16 +53,12 @@ public class RatingCalculationService {
 
     public RatingCalculationService(
         ForumDataSimulation forumDataSimulation, 
-        ContentSnapshotRepository contentSnapshotRepository,
-        MemberRatingRepository memberRatingRepository,
         KnowledgeAreaRepository knowledgeAreaRepository,
         MemberRepository memberRepository,
         AchievementDetectionService achievementDetectionService,
         JdbcTemplate jdbcTemplate) // 新增构造参数
     {
         this.forumDataSimulation = forumDataSimulation;
-        this.contentSnapshotRepository = contentSnapshotRepository;
-        this.memberRatingRepository = memberRatingRepository;
         this.knowledgeAreaRepository = knowledgeAreaRepository;
         this.memberRepository = memberRepository; // 新增赋值
         this.achievementDetectionService = achievementDetectionService;
@@ -93,7 +85,7 @@ public class RatingCalculationService {
     /**
      * 接口：每日/定时执行全量评级计算。
      */
-    @Scheduled(fixedRate = 300000 * 10) // 每 15 分钟执行一次
+    @Scheduled(fixedRate = 30000) // 每 30 秒执行一次
     @Transactional 
     public void executeDailyRatingCalculation() {
         long totalStartTime = System.currentTimeMillis();
@@ -199,8 +191,8 @@ public class RatingCalculationService {
                     if (joinDateStr != null) {
                         newMember.setJoinDate(LocalDateTime.parse(joinDateStr));
                     } else {
-                        // 如果没有提供加入日期，使用当前时间
-                        newMember.setJoinDate(LocalDateTime.now());
+                        // 如果没有提供加入日期，使用虚拟时间（支持时间模拟）
+                        newMember.setJoinDate(TimeSimulation.now());
                     }
                     
                     // 保存新成员
@@ -304,7 +296,7 @@ public class RatingCalculationService {
         Set<Long> existingMemberIds = entitiesToSave.stream()
             .map(ContentSnapshot::getMemberId)
             .collect(Collectors.toSet());
-        Set<Long> validMemberIds = memberRepository.findAllById(existingMemberIds).stream()
+        Set<Long> validMemberIds = memberRepository.findAllById(new java.util.ArrayList<>(existingMemberIds)).stream()
             .map(Member::getMemberId)
             .collect(Collectors.toSet());
         
@@ -315,6 +307,23 @@ public class RatingCalculationService {
         int skippedCount = entitiesToSave.size() - validEntities.size();
         if (skippedCount > 0) {
             log.warn("过滤掉 {} 条内容（member_id 不存在于 Member 表）", skippedCount);
+        }
+        
+        // 清理重复数据：删除已有的相同 content_id 记录（防止重复键冲突）
+        long cleanStartTime = System.currentTimeMillis();
+        Set<Long> contentIdsToInsert = validEntities.stream()
+            .map(ContentSnapshot::getContentId)
+            .collect(Collectors.toSet());
+        
+        if (!contentIdsToInsert.isEmpty()) {
+            String deleteSQL = "DELETE FROM ContentSnapshot WHERE content_id IN (" +
+                String.join(",", contentIdsToInsert.stream().map(String::valueOf).toArray(String[]::new)) +
+                ")";
+            int deletedCount = jdbcTemplate.update(deleteSQL);
+            long cleanTime = System.currentTimeMillis() - cleanStartTime;
+            if (deletedCount > 0) {
+                log.info("删除 {} 条重复的 ContentSnapshot 记录，耗时 {} ms", deletedCount, cleanTime);
+            }
         }
         
         // 使用 JdbcTemplate 批量插入到数据库（避免 Hibernate 自增主键问题）
@@ -380,28 +389,15 @@ public class RatingCalculationService {
         
         log.info("  分组聚合耗时: {} ms, 成员-领域组合数: {}", groupTime, totalGroups);
 
-        // 2. 批量查询现有的 MemberRating 记录
-        long batchQueryStartTime = System.currentTimeMillis();
-        List<MemberRating> existingRatings = memberRatingRepository.findAll();
-        Map<String, MemberRating> existingRatingsMap = existingRatings.stream()
-            .collect(Collectors.toMap(
-                rating -> rating.getMemberId() + "_" + rating.getAreaId(),
-                rating -> rating,
-                (existing, replacement) -> existing
-            ));
-        long batchQueryTime = System.currentTimeMillis() - batchQueryStartTime;
-        log.info("  批量查询现有评分耗时: {} ms, 记录数: {}", batchQueryTime, existingRatings.size());
-
         // 使用进度条
         ProgressBar desProgressBar = new ProgressBar("成员领域专精度得分计算", totalGroups);
 
         // 用于累积各操作的耗时
         final long[] desCalculationTime = {0};
-        List<MemberRating> ratingsToSave = new java.util.ArrayList<>();
-        int updateCount = 0;
-        int createCount = 0;
+        List<MemberRating> ratingsToInsert = new java.util.ArrayList<>();
+        int insertCount = 0;
 
-        // 3. 遍历每个成员和其在不同领域的内容，计算 DES
+        // 2. 遍历每个成员和其在不同领域的内容，计算 DES
         for (Map.Entry<Long, Map<Integer, List<ContentDataDTO>>> memberEntry : memberContentGroup.entrySet()) {
             Long memberId = memberEntry.getKey();
             for (Map.Entry<Integer, List<ContentDataDTO>> areaEntry : memberEntry.getValue().entrySet()) {
@@ -413,26 +409,15 @@ public class RatingCalculationService {
                 String ratingLevel = ratingAlgorithm.determineRatingLevel(desScore);
                 desCalculationTime[0] += (System.nanoTime() - calcStart) / 1_000_000;
                 
-                String key = memberId + "_" + areaId;
-                MemberRating entity = existingRatingsMap.get(key);
-                
-                if (entity != null) {
-                    // 更新现有记录
-                    entity.setDesScore(desScore);
-                    entity.setRatingLevel(ratingLevel);
-                    entity.setUpdateDate(LocalDate.now());
-                    updateCount++;
-                } else {
-                    // 创建新记录
-                    entity = new MemberRating();
-                    entity.setMemberId(memberId);
-                    entity.setAreaId(areaId);
-                    entity.setDesScore(desScore);
-                    entity.setRatingLevel(ratingLevel);
-                    entity.setUpdateDate(LocalDate.now());
-                    createCount++;
-                }
-                ratingsToSave.add(entity);
+                // 创建新记录（保留历史记录，总是插入新行）
+                MemberRating entity = new MemberRating();
+                entity.setMemberId(memberId);
+                entity.setAreaId(areaId);
+                entity.setDesScore(desScore);
+                entity.setRatingLevel(ratingLevel);
+                entity.setUpdateDate(TimeSimulation.now().toLocalDate());
+                ratingsToInsert.add(entity);
+                insertCount++;
                 
                 desProgressBar.step();
             }
@@ -440,32 +425,11 @@ public class RatingCalculationService {
 
         desProgressBar.complete();
         
-        // 4. 分离更新和插入操作，分别批量处理
-        long batchSaveStartTime = System.currentTimeMillis();
-        List<MemberRating> toUpdate = ratingsToSave.stream()
-            .filter(r -> r.getRatingId() != null)
-            .collect(Collectors.toList());
-        List<MemberRating> toInsert = ratingsToSave.stream()
-            .filter(r -> r.getRatingId() == null)
-            .collect(Collectors.toList());
-        
-        long updateTime = 0;
-        long insertTime = 0;
-        
-        // 批量更新现有记录
-        if (!toUpdate.isEmpty()) {
-            long updateStartTime = System.currentTimeMillis();
-            memberRatingRepository.saveAll(toUpdate);
-            updateTime = System.currentTimeMillis() - updateStartTime;
-        }
-        
-        // 批量插入新记录（使用 JdbcTemplate）
-        if (!toInsert.isEmpty()) {
-            long insertStartTime = System.currentTimeMillis();
-            
-            // 批量插入 MemberRating（member_id 已在 syncMemberDataFromSnapshot 中同步）
+        // 3. 批量插入新记录（使用 JdbcTemplate）
+        long insertStartTime = System.currentTimeMillis();
+        if (!ratingsToInsert.isEmpty()) {
             String sql = "INSERT INTO memberrating (member_id, area_id, des_score, rating_level, update_date) VALUES (?, ?, ?, ?, ?)";
-            jdbcTemplate.batchUpdate(sql, toInsert, toInsert.size(), 
+            jdbcTemplate.batchUpdate(sql, ratingsToInsert, ratingsToInsert.size(), 
                 (ps, rating) -> {
                     ps.setLong(1, rating.getMemberId());
                     ps.setInt(2, rating.getAreaId());
@@ -473,17 +437,13 @@ public class RatingCalculationService {
                     ps.setString(4, rating.getRatingLevel());
                     ps.setObject(5, rating.getUpdateDate());
                 });
-            insertTime = System.currentTimeMillis() - insertStartTime;
         }
-        
-        long batchSaveTime = System.currentTimeMillis() - batchSaveStartTime;
+        long insertTime = System.currentTimeMillis() - insertStartTime;
         
         long totalTime = System.currentTimeMillis() - methodStartTime;
-        log.info("成员领域评分更新完成，更新: {}, 新建: {}", updateCount, createCount);
+        log.info("成员领域评分计算完成，新增: {} 条历史记录", insertCount);
         log.info("  - DES计算耗时: {} ms", desCalculationTime[0]);
-        log.info("  - 批量更新耗时: {} ms", updateTime);
         log.info("  - 批量插入耗时: {} ms", insertTime);
-        log.info("  - 批量保存总耗时: {} ms", batchSaveTime);
         log.info("  - DES总耗时: {} ms", totalTime);
     }
 

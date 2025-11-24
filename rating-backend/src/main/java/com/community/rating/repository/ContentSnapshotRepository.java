@@ -4,6 +4,7 @@ package com.community.rating.repository;
 import com.community.rating.entity.ContentSnapshot;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository; // 导入 Repository
 import java.time.LocalDateTime;
 
@@ -36,6 +37,16 @@ public interface ContentSnapshotRepository extends JpaRepository<ContentSnapshot
 
     // 按成员与时间区间查询
     List<ContentSnapshot> findByMemberIdAndPublishTimeBetween(Long memberId, java.time.LocalDateTime start, java.time.LocalDateTime end);
+
+    /**
+     * 计算分数高于给定 contentId 的帖子的数量。
+     * @param contentId 目标帖子的ID
+     * @param cisScore 目标帖子的分数
+     * @return 排名靠前的帖子数量
+     */
+    @Query("SELECT COUNT(c) FROM ContentSnapshot c WHERE c.cisScore > :cisScore")
+    Long countContentsWithHigherScore(@Param("cisScore") Double cisScore);
+    
 
     // ----------------- Database-level aggregations (native queries) -----------------
 

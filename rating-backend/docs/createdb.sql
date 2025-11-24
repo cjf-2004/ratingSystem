@@ -109,11 +109,11 @@ CREATE TABLE ContentSnapshot (
 ) COMMENT='每日批量计算的原始数据快照及CIS得分';
 
 
--- 2.2 MemberRating (成员评级结果表)
+-- 2.2 MemberRating (成员评级历史表)
 CREATE TABLE MemberRating (
     rating_id BIGINT UNSIGNED NOT NULL PRIMARY KEY AUTO_INCREMENT,
     member_id BIGINT UNSIGNED NOT NULL,
-    area_id INT UNSIGNED UNSIGNED NOT NULL,
+    area_id INT UNSIGNED NOT NULL,
     
     des_score DECIMAL(12, 4) NOT NULL COMMENT 'DES_K 最终影响力分数',
     rating_level VARCHAR(2) NOT NULL COMMENT '映射后的等级 (L1-L5)',
@@ -123,12 +123,12 @@ CREATE TABLE MemberRating (
     FOREIGN KEY (member_id) REFERENCES Member(member_id),
     FOREIGN KEY (area_id) REFERENCES KnowledgeArea(area_id),
     
-    -- 复合唯一索引：确保一个成员在一个领域只有一条最新的评级记录
-    UNIQUE KEY uk_member_area (member_id, area_id),
+    -- 复合索引：支持快速查询成员在特定领域最新的评级记录（按日期倒序取第一条）
+    INDEX idx_member_area_date (member_id, area_id, update_date DESC),
     
-    -- 复合索引：支持按领域进行影响力分数排名（Web展示）
+    -- 复合索引：支持按领域进行影响力分数排名（Web展示，需要子查询获取最新记录）
     INDEX idx_rank_des (area_id, des_score)
-) COMMENT='存储成员在各领域的最新评级结果';
+) COMMENT='存储成员在各领域的评级历史记录';
 
 
 -- 2.3 AchievementStatus (成就状态表)
