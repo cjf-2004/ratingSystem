@@ -87,19 +87,20 @@ public class RatingAlgorithm {
      * @param publishTime 内容发布时间
      * @return RecencyFactor (BigDecimal)
      */
-    public BigDecimal calculateRecencyFactor(LocalDateTime publishTime) {
-        long daysSincePublish = ChronoUnit.DAYS.between(publishTime, LocalDateTime.now());
+        public BigDecimal calculateRecencyFactor(LocalDateTime publishTime) {
+            // 使用虚拟时间
+            long daysSincePublish = ChronoUnit.DAYS.between(publishTime, com.community.rating.simulation.TimeSimulation.now());
 
-        if (daysSincePublish <= 30) {
-            return BigDecimal.ONE; // 1.0 (近 30 天)
-        } else if (daysSincePublish <= 90) {
-            return new BigDecimal("0.7"); // 31 - 90 天
-        } else if (daysSincePublish <= 180) {
-            return new BigDecimal("0.4"); // 91 - 180 天
-        } else {
-            return new BigDecimal("0.1"); // 大于 180 天
+            if (daysSincePublish <= 30) {
+                return BigDecimal.ONE; // 1.0 (近 30 天)
+            } else if (daysSincePublish <= 90) {
+                return new BigDecimal("0.7"); // 31 - 90 天
+            } else if (daysSincePublish <= 180) {
+                return new BigDecimal("0.4"); // 91 - 180 天
+            } else {
+                return new BigDecimal("0.1"); // 大于 180 天
+            }
         }
-    }
 
     /**
      * 3. 核心方法：计算成员领域专精度得分 (Domain Expertise Score - DES)
