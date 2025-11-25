@@ -166,7 +166,7 @@ public class ForumDataSimulation {
     );
 
     // 唯一 ID 生成器
-    private final AtomicLong memberIdCounter = new AtomicLong(103);
+    private final AtomicLong memberIdCounter = new AtomicLong(100);
     private final AtomicLong contentIdCounter = new AtomicLong(200);
     private final AtomicLong eventIdCounter = new AtomicLong(1);
 
@@ -534,8 +534,8 @@ public class ForumDataSimulation {
     }
 
     private void saveToFile() {
-        try {
-            objectMapper.writeValue(new FileOutputStream(SIMULATION_DATA_FILE), fullSaveData);
+        try(FileOutputStream fos = new FileOutputStream(SIMULATION_DATA_FILE)) {
+            objectMapper.writeValue(fos, fullSaveData);
             log.info("模拟数据已保存到 {} 文件。", SIMULATION_DATA_FILE);
         } catch (Exception e) {
             log.error("保存模拟数据时出错: {}", e.getMessage());
@@ -543,8 +543,8 @@ public class ForumDataSimulation {
     }
 
     private void loadFromFile() {
-        try {
-            SimulationSaveData saveData = objectMapper.readValue(new FileInputStream(SIMULATION_DATA_FILE), SimulationSaveData.class);
+        try(FileInputStream fis = new FileInputStream(SIMULATION_DATA_FILE)) {
+            SimulationSaveData saveData = objectMapper.readValue(fis, SimulationSaveData.class);
             for (MemberRecord member : saveData.members) {
                 memberDB.put(member.id, member);
             }
@@ -554,6 +554,11 @@ public class ForumDataSimulation {
             }
             fullSaveData.contents.addAll(saveData.contents);
             fullSaveData.timestamp = saveData.timestamp;
+            // 恢复 ID 计数器
+            memberIdCounter.set(
+                    saveData.members.stream().mapToLong(m -> m.id).max().orElse(100));
+            contentIdCounter.set(
+                    saveData.contents.stream().mapToLong(c -> c.id).max().orElse(200));
             log.info("模拟数据已从 {} 文件加载, 保存时间: {}。", SIMULATION_DATA_FILE, saveData.timestamp);
         } catch (Exception e) {
             log.error("加载模拟数据时出错: {}", e.getMessage());
