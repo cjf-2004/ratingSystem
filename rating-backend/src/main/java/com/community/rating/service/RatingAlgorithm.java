@@ -1,6 +1,7 @@
 package com.community.rating.service;
 
 import com.community.rating.dto.ContentDataDTO;
+import org.springframework.stereotype.Component;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.temporal.ChronoUnit;
@@ -17,6 +18,7 @@ import java.time.LocalDateTime;
  * 【阶段二】DES (Domain Expertise Score) 公式：
  * DES_K = Σ(CIS_i × RecencyFactor_i)
  */
+@Component
 public class RatingAlgorithm {
 
     // --- 阶段一: CIS 权重参数 ---
@@ -41,10 +43,11 @@ public class RatingAlgorithm {
     private static final BigDecimal W_NEGATIVE_HATE = new BigDecimal("10.0");
 
     // --- 阶段二: DES 评级阈值 ---
-    private static final BigDecimal C1_EXPLORER = new BigDecimal("50");
-    private static final BigDecimal C2_CONTRIBUTOR = new BigDecimal("200");
-    private static final BigDecimal C3_EXPERT = new BigDecimal("500");
-    private static final BigDecimal C4_MASTER = new BigDecimal("1000");
+    // 根据实际分数分布调整（目标分布：L1 39%, L2 25%, L3 23%, L4 10%, L5 2%）
+    private static final BigDecimal C1_EXPLORER = new BigDecimal("100");       // L1 → L2 分界线
+    private static final BigDecimal C2_CONTRIBUTOR = new BigDecimal("320");    // L2 → L3 分界线
+    private static final BigDecimal C3_EXPERT = new BigDecimal("700");         // L3 → L4 分界线
+    private static final BigDecimal C4_MASTER = new BigDecimal("1300");        // L4 → L5 分界线
     
     // 保持小数点后 4 位精度
     private static final int SCALE = 4;
@@ -245,5 +248,30 @@ public class RatingAlgorithm {
         } else {
             return "L1"; // 领域新手
         }
+    }
+
+    /**
+     * 5. 格式化平均评级分数
+     * 
+     * 将所有成员的平均 DES 分数转换为对应的等级字符串。
+     * 例如：平均 DES = 250 → "L3 (250)"
+     * 
+     * @param avgDesScore 平均 DES 分数 (Double)
+     * @return 格式化的评级字符串，例如 "L3" 或 "N/A"
+     */
+    public String formatAverageRatingLevel(Double avgDesScore) {
+        if (avgDesScore == null) {
+            return "N/A";
+        }
+        
+        // 将 Double 转换为 BigDecimal
+        BigDecimal avgScore = BigDecimal.valueOf(avgDesScore);
+        
+        // 获取等级
+        String level = determineRatingLevel(avgScore);
+        
+        // 格式化输出：等级 + 分数（四舍五入到整数）
+        BigDecimal roundedScore = avgScore.setScale(0, RoundingMode.HALF_UP);
+        return level + " (" + roundedScore.toPlainString() + ")";
     }
 }

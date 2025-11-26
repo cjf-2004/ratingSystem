@@ -84,7 +84,7 @@ public class AchievementDetectionService {
             // 4. 批量插入新成就 (使用原生 SQL 以获得最佳性能)
             long insertStartTime = System.currentTimeMillis();
             String sql = "INSERT INTO achievementstatus (member_id, achievement_key, achieved_time) VALUES (?, ?, ?)";
-            LocalDateTime now = LocalDateTime.now();
+            LocalDateTime now = com.community.rating.simulation.TimeSimulation.now();
             
             jdbcTemplate.batchUpdate(sql, newMemberIds, newMemberIds.size(), 
                 (ps, memberId) -> {

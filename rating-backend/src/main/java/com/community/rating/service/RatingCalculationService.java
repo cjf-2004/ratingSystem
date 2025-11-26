@@ -41,7 +41,7 @@ public class RatingCalculationService {
 
     private static final Logger log = LoggerFactory.getLogger(RatingCalculationService.class);
     private final ForumDataSimulation forumDataSimulation;
-    private final RatingAlgorithm ratingAlgorithm = new RatingAlgorithm();
+    private final RatingAlgorithm ratingAlgorithm;
     
     private final KnowledgeAreaRepository knowledgeAreaRepository;
     private final MemberRepository memberRepository; // 新增注入 MemberRepository
@@ -53,12 +53,14 @@ public class RatingCalculationService {
 
     public RatingCalculationService(
         ForumDataSimulation forumDataSimulation, 
+        RatingAlgorithm ratingAlgorithm,
         KnowledgeAreaRepository knowledgeAreaRepository,
         MemberRepository memberRepository,
         AchievementDetectionService achievementDetectionService,
         JdbcTemplate jdbcTemplate) // 新增构造参数
     {
         this.forumDataSimulation = forumDataSimulation;
+        this.ratingAlgorithm = ratingAlgorithm; // 新增赋值
         this.knowledgeAreaRepository = knowledgeAreaRepository;
         this.memberRepository = memberRepository; // 新增赋值
         this.achievementDetectionService = achievementDetectionService;

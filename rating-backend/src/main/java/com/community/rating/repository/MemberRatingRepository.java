@@ -57,13 +57,34 @@ public interface MemberRatingRepository extends JpaRepository<MemberRating, Long
 
     /**
      * 查询评级分布：按 rating_level 分组统计每个等级的成员数（去重）
+     * 逻辑：
+     * 1. 先按 (member_id, area_id) 分组，取每个成员在每个领域的最新评级
+     * 2. 再按 rating_level 分组，统计有多少不同的成员达到了该等级
      * 返回 [rating_level, count] 的列表
-     * 注意：同一成员可能在多个领域有评级，这里按成员数去重
      */
-    @Query(value = "SELECT mr.rating_level, COUNT(DISTINCT mr.member_id) as level_count " +
-                   "FROM memberrating mr " +
-                   "WHERE mr.rating_level IS NOT NULL " +
-                   "GROUP BY mr.rating_level " +
-                   "ORDER BY mr.rating_level ASC", nativeQuery = true)
+    @Query(value = "SELECT latest.rating_level, COUNT(DISTINCT latest.member_id) as level_count " +
+                   "FROM (" +
+                   "    SELECT mr.member_id, mr.area_id, mr.rating_level, " +
+                   "           ROW_NUMBER() OVER(PARTITION BY mr.member_id, mr.area_id ORDER BY mr.update_date DESC) as rn " +
+                   "    FROM memberrating mr " +
+                   "    WHERE mr.rating_level IS NOT NULL" +
+                   ") latest " +
+                   "WHERE latest.rn = 1 " +
+                   "GROUP BY latest.rating_level " +
+                   "ORDER BY latest.rating_level ASC", nativeQuery = true)
     java.util.List<Object[]> getRatingDistribution();
+
+    /**
+     * 获取所有成员的最新 DES 分数（用于分析分数分布）
+     * 返回每个成员的最新 DES 分数
+     */
+    @Query(value = "SELECT latest.des_score " +
+                   "FROM (" +
+                   "    SELECT mr.member_id, mr.des_score, " +
+                   "           ROW_NUMBER() OVER(PARTITION BY mr.member_id ORDER BY mr.update_date DESC) as rn " +
+                   "    FROM memberrating mr" +
+                   ") latest " +
+                   "WHERE latest.rn = 1 " +
+                   "ORDER BY latest.des_score DESC", nativeQuery = true)
+    java.util.List<Object[]> getAllLatestDesScores();
 }

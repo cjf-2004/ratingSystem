@@ -56,6 +56,17 @@ public class ForumDataSimulation {
     private static final String SIMULATION_DATA_FOLDER = "./simulation/";
     // 模拟行为文件
     private static final String SIMULATION_DATA_FILE = SIMULATION_DATA_FOLDER + "forum_simulation_data.json";
+    
+    // 【动态缩放因子】基于用户总数调整 readMean，保持相对比例不变
+    // 基准用户数为 1000，如果实际用户数不同，按比例调整
+    // 公式：actualReadMean = baselineReadMean * (SIMULATE_USER_COUNT / 1000) * scalingFactor
+    private static final int BASELINE_USER_COUNT = 8000;
+    private static final double READ_SCALING_FACTOR = 1; // 总体缩放因子，可根据需要调整 (0-1)
+    
+    private static double getScaledReadMean(double baselineReadMean) {
+        return baselineReadMean * (SIMULATE_USER_COUNT / (double) BASELINE_USER_COUNT) * READ_SCALING_FACTOR;
+    }
+    
     // 用户行为枚举
     private static final WeightedList<UserBehavior> SIMULATE_USER_BEHAVIORS = new WeightedList<>(List.of(
             new Pair<>(new UserBehavior(
@@ -412,8 +423,10 @@ public class ForumDataSimulation {
         String domainTag = domains.get(sample(behavior.domains));
         int lengthLevel = sample(behavior.lengthLevels);
 
-        // 生成阅读量, 正态分布
-        long readCount = (long) Math.max(0, normalRandom(behavior.interaction.readMean, behavior.interaction.readStdDev));
+        // 【修改】生成阅读量，使用动态缩放后的 readMean
+        double scaledReadMean = getScaledReadMean(behavior.interaction.readMean);
+        double scaledReadStdDev = behavior.interaction.readStdDev * (SIMULATE_USER_COUNT / (double) BASELINE_USER_COUNT) * READ_SCALING_FACTOR;
+        long readCount = (long) Math.max(0, normalRandom(scaledReadMean, scaledReadStdDev));
 
         InteractionCount interactionCount = new InteractionCount(
                 readCount,
