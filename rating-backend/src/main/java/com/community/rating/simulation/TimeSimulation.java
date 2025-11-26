@@ -11,7 +11,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.Optional;
 
 /**
- * 单文件时间模拟服务：支持真实/虚拟时间切换，虚拟时间每 5 分钟推进 1 天并持久化。
+ * 单文件时间模拟服务：支持真实/虚拟时间切换，虚拟时间每 30s 推进 1 天并持久化。
  */
 public class TimeSimulation {
 

@@ -16,4 +16,6 @@ public class ContentDTO {
     private Integer unlikes;     // 点踩数 (映射自 hate_count_snapshot)
     private Integer comments;    // 评论数
     private Integer shares;      // 分享数
+    private Integer reads;       // 阅读数 (新增字段，映射自 read_count_snapshot)
+    private Integer collects;    // 收藏数 (新增字段，映射自 collect_count_snapshot)
 }
