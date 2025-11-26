@@ -29,7 +29,7 @@ public class CommunityVeteranRule implements AchievementRule {
 
     @Override
     public List<Long> detect() {
-        LocalDateTime cutoff = LocalDateTime.now().minusDays(DAYS_THRESHOLD);
+        LocalDateTime cutoff = com.community.rating.simulation.TimeSimulation.now().minusDays(DAYS_THRESHOLD);
         return memberRepo.findAll().stream()
                 .filter(m -> m.getJoinDate() != null && m.getJoinDate().isBefore(cutoff))
                 .map(Member::getMemberId)

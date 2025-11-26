@@ -31,7 +31,7 @@ public class FastGrowthRule implements AchievementRule {
 
     @Override
     public List<Long> detect() {
-        LocalDateTime cutoff = LocalDateTime.now();
+        LocalDateTime cutoff = com.community.rating.simulation.TimeSimulation.now();
         // collect members who joined within last 30 days
         List<Member> recent = memberRepo.findAll().stream()
                 .filter(m -> m.getJoinDate() != null && m.getJoinDate().isAfter(cutoff.minusDays(30)))

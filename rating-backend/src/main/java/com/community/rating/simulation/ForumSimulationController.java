@@ -66,7 +66,7 @@ public class ForumSimulationController {
             @RequestParam(required = false) String startTime,
             @RequestParam(required = false) String endTime) {
 
-        LocalDateTime end = (endTime != null) ? LocalDateTime.parse(endTime, FORMATTER) : LocalDateTime.now();
+        LocalDateTime end = (endTime != null) ? LocalDateTime.parse(endTime, FORMATTER) : TimeSimulation.now();
         LocalDateTime start = (startTime != null) ? LocalDateTime.parse(startTime, FORMATTER) : end.minusSeconds(30);
 
         log.info("API CALL: 拉取互动事件，时间窗口从 {} 到 {}。", start, end);
