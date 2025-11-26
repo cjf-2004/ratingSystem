@@ -45,24 +45,26 @@ public class ContentServiceImpl implements ContentService {
         String authorName = memberRepository.findById(entity.getMemberId())
                 .map(Member::getName)
                 .orElse("未知作者");
-
+    
         // 2. 获取领域名
         String domain = areaRepository.findById(entity.getAreaId())
                 .map(KnowledgeArea::getAreaName)
                 .orElse("未知领域");
-
+    
         ContentDTO dto = new ContentDTO();
         dto.setRank(rank);
         dto.setContentId(entity.getContentId());
         dto.setAuthorId(entity.getMemberId());
         dto.setAuthorName(authorName);
-        dto.setPublishTime(entity.getPublishTime().toString()); 
+        dto.setPublishTime(entity.getPublishTime().toString());
         dto.setDomain(domain);
-        dto.setScore(entity.getCisScore().intValue()); 
+        dto.setScore(entity.getCisScore().intValue());
         dto.setLikes(entity.getLikeCountSnapshot());
-        dto.setUnlikes(entity.getHateCountSnapshot()); 
+        dto.setUnlikes(entity.getHateCountSnapshot());
         dto.setComments(entity.getCommentCountSnapshot());
         dto.setShares(entity.getShareCountSnapshot());
+        dto.setReads(entity.getReadCountSnapshot()); // 新增：设置阅读数
+        dto.setCollects(entity.getCollectCountSnapshot()); // 新增：设置收藏数
         
         return dto;
     }

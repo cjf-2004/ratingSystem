@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
+import java.math.BigDecimal;
 
 @Service
 public class MemberServiceImpl implements MemberService {
@@ -138,6 +139,10 @@ public class MemberServiceImpl implements MemberService {
             dto.setScore(latestRating.getDesScore() != null ? 
                     latestRating.getDesScore().intValue() : null);
             
+            // 计算该成员在当前领域的排名
+            int rank = calculateDomainRank(areaId, latestRating.getDesScore());
+            dto.setRank(rank);
+            
             // 创建历史分数记录列表
             List<ScoreHistoryItemDTO> historyList = areaRatings.stream()
                     .map(rating -> new ScoreHistoryItemDTO(
@@ -164,6 +169,52 @@ public class MemberServiceImpl implements MemberService {
         }
 
         return resultList;
+    }
+    
+    /**
+     * 计算成员在特定领域的排名
+     * @param areaId 领域ID
+     * @param memberScore 当前成员的分数
+     * @return 排名（从1开始）
+     */
+    private int calculateDomainRank(Integer areaId, BigDecimal memberScore) {
+        if (areaId == null || memberScore == null) {
+            return 0; // 无效数据返回0
+        }
+        
+        // 获取该领域所有成员的所有评级记录
+        List<MemberRating> allAreaRatings = memberRatingRepository.findByAreaIdOrderByDesScoreDesc(areaId);
+        
+        // 按成员ID分组，只保留每个成员在该领域的最新评级
+        Map<Long, MemberRating> latestRatingsByMember = allAreaRatings.stream()
+            .collect(Collectors.toMap(
+                MemberRating::getMemberId,
+                rating -> rating,
+                (existing, replacement) -> {
+                    // 保留更新日期较新的记录
+                    if (existing.getUpdateDate() != null && replacement.getUpdateDate() != null) {
+                        return existing.getUpdateDate().isAfter(replacement.getUpdateDate()) ? existing : replacement;
+                    }
+                    return existing; // 处理日期为空的情况
+                }
+            ));
+        
+        // 将最新评级转换为列表并按分数降序排序
+        List<MemberRating> latestRatings = latestRatingsByMember.values().stream()
+            .filter(rating -> rating.getDesScore() != null)
+            .sorted((r1, r2) -> r2.getDesScore().compareTo(r1.getDesScore()))
+            .collect(Collectors.toList());
+        
+        // 计算排名
+        int rank = 1;
+        for (MemberRating rating : latestRatings) {
+            if (rating.getDesScore().compareTo(memberScore) > 0) {
+                rank++;
+            } else {
+                break;
+            }
+        }
+        return rank;
     }
 
     @Override
