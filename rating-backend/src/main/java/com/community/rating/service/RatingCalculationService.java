@@ -105,13 +105,13 @@ public class RatingCalculationService {
         // 2. CIS 计算
         log.info("--- 1. 开始执行【内容影响力分数 (CIS)】计算任务 ---");
         long cisStartTime = System.currentTimeMillis();
-        List<ContentDataDTO> contentDTOsWithCIS = calculateAllContentCIS();
+        List<ContentDataDTO> allContentDTOsWithUpdatedCIS = calculateAllContentCIS();
         timingStats.put("2. CIS计算", System.currentTimeMillis() - cisStartTime);
 
         // 3. DES 计算
         log.info("--- 2. 开始执行【成员领域专精度得分 (DES)】计算任务 ---");
         long desStartTime = System.currentTimeMillis();
-        updateAllMemberRankings(contentDTOsWithCIS);
+        updateAllMemberRankings(allContentDTOsWithUpdatedCIS);
         timingStats.put("3. DES计算", System.currentTimeMillis() - desStartTime);
 
         log.info("--- 评级定时计算任务执行完毕。---");
@@ -222,6 +222,11 @@ public class RatingCalculationService {
 
     /**
      * 职责：计算所有内容的 CIS，并持久化到 ContentSnapshotRepository。
+     * 流程：
+     * 1. 拉取新快照并处理（有则插入，无则跳过）
+     * 2. 无论是否有新快照，都遍历并更新数据库中所有现有的 ContentSnapshot 条目
+     *    （因为分数随时间变化，需要重新计算衰减因子）
+     * 返回：所有现有内容的更新后CIS列表（用于后续DES计算）
      */
     @Transactional
     private List<ContentDataDTO> calculateAllContentCIS() {
@@ -231,137 +236,207 @@ public class RatingCalculationService {
         List<Map<String, Object>> snapshotMaps = forumDataSimulation.getContentSnapshot();
         long pullTime = System.currentTimeMillis() - pullStartTime;
         
-        if (snapshotMaps.isEmpty()) {
-            log.warn("未拉取到任何内容快照，跳过 CIS 计算。");
-            return List.of();
-        }
-        
-        log.info("  拉取内容快照耗时: {} ms, 数量: {}", pullTime, snapshotMaps.size());
-
-        // 使用进度条
-        ProgressBar cisProgressBar = new ProgressBar("内容影响力分数计算", snapshotMaps.size());
-
         final long[] mappingTime = {0};
         final long[] calculationTime = {0};
         final int[] filteredCount = {0};
         final int[] processedCount = {0};
         
-        // 批量收集需要保存的实体
-        List<ContentSnapshot> entitiesToSave = new java.util.ArrayList<>();
-
-        List<ContentDataDTO> calculatedContentDTOs = snapshotMaps.stream()
-            .map(map -> {
-                long mapStart = System.nanoTime();
-                ContentDataDTO dto = this.mapToDTO(map);
-                mappingTime[0] += (System.nanoTime() - mapStart) / 1_000_000; // 转换为毫秒
-                return dto;
-            })
-            .filter(dto -> {
-                boolean hasAreaId = dto.getAreaId() != null;
-                if (!hasAreaId) filteredCount[0]++;
-                return hasAreaId;
-            })
-            .peek(dto -> {
-                long calcStart = System.nanoTime();
-                BigDecimal cisScore = ratingAlgorithm.calculateCIS(dto);
-                // 保证 CIS 不为负：如果计算结果为 null 或负数，映射为 0
-                if (cisScore == null) {
-                    cisScore = BigDecimal.ZERO;
-                } else if (cisScore.compareTo(BigDecimal.ZERO) < 0) {
-                    cisScore = BigDecimal.ZERO;
-                }
-                calculationTime[0] += (System.nanoTime() - calcStart) / 1_000_000;
-                dto.setCisScore(cisScore);
+        List<ContentDataDTO> calculatedContentDTOs = new java.util.ArrayList<>();
+        
+        // 第一步：处理新拉取的快照（如果有）
+        long dbInsertStart = System.currentTimeMillis();
+        if (!snapshotMaps.isEmpty()) {
+            log.info("  拉取内容快照耗时: {} ms, 数量: {}", pullTime, snapshotMaps.size());
+            ProgressBar cisProgressBar = new ProgressBar("内容影响力分数计算（新快照）", snapshotMaps.size());
+            
+            List<ContentSnapshot> newEntitiesToSave = new java.util.ArrayList<>();
+            
+            calculatedContentDTOs = snapshotMaps.stream()
+                .map(map -> {
+                    long mapStart = System.nanoTime();
+                    ContentDataDTO dto = this.mapToDTO(map);
+                    mappingTime[0] += (System.nanoTime() - mapStart) / 1_000_000;
+                    return dto;
+                })
+                .filter(dto -> {
+                    boolean hasAreaId = dto.getAreaId() != null;
+                    if (!hasAreaId) filteredCount[0]++;
+                    return hasAreaId;
+                })
+                .peek(dto -> {
+                    long calcStart = System.nanoTime();
+                    BigDecimal cisScore = ratingAlgorithm.calculateCIS(dto);
+                    if (cisScore == null || cisScore.compareTo(BigDecimal.ZERO) < 0) {
+                        cisScore = BigDecimal.ZERO;
+                    }
+                    calculationTime[0] += (System.nanoTime() - calcStart) / 1_000_000;
+                    dto.setCisScore(cisScore);
+                    
+                    ContentSnapshot entity = convertToContentSnapshot(dto);
+                    newEntitiesToSave.add(entity);
+                    
+                    processedCount[0]++;
+                    if (processedCount[0] % 1000 == 0) {
+                        cisProgressBar.increment(1000);
+                    }
+                })
+                .collect(Collectors.toList());
+            
+            int remaining = calculatedContentDTOs.size() % 1000;
+            if (remaining > 0) {
+                cisProgressBar.increment(remaining);
+            }
+            cisProgressBar.complete();
+            
+            // 过滤新快照：只保留 member_id 已存在于 Member 表的记录
+            Set<Long> existingMemberIds = newEntitiesToSave.stream()
+                .map(ContentSnapshot::getMemberId)
+                .collect(Collectors.toSet());
+            Set<Long> validMemberIds = memberRepository.findAllById(new java.util.ArrayList<>(existingMemberIds)).stream()
+                .map(Member::getMemberId)
+                .collect(Collectors.toSet());
+            
+            List<ContentSnapshot> validNewEntities = newEntitiesToSave.stream()
+                .filter(entity -> validMemberIds.contains(entity.getMemberId()))
+                .collect(Collectors.toList());
+            
+            int skippedCount = newEntitiesToSave.size() - validNewEntities.size();
+            if (skippedCount > 0) {
+                log.warn("过滤掉 {} 条新内容（member_id 不存在于 Member 表）", skippedCount);
+            }
+            
+            // 插入新快照：删除旧的相同 content_id，然后插入新的
+            if (!validNewEntities.isEmpty()) {
+                Set<Long> contentIdsToInsert = validNewEntities.stream()
+                    .map(ContentSnapshot::getContentId)
+                    .collect(Collectors.toSet());
                 
-                // 转换为实体并收集，不立即保存
-                ContentSnapshot entity = convertToContentSnapshot(dto);
-                entitiesToSave.add(entity);
-                
-                // 优化：每1000条更新一次进度条
-                processedCount[0]++;
-                if (processedCount[0] % 1000 == 0) {
-                    cisProgressBar.increment(1000);
+                String deleteSQL = "DELETE FROM ContentSnapshot WHERE content_id IN (" +
+                    String.join(",", contentIdsToInsert.stream().map(String::valueOf).toArray(String[]::new)) +
+                    ")";
+                int deletedCount = jdbcTemplate.update(deleteSQL);
+                if (deletedCount > 0) {
+                    log.info("删除 {} 条重复的 ContentSnapshot 记录", deletedCount);
                 }
-            })
-            .collect(Collectors.toList());
-
-        // 更新剩余的进度
-        int remaining = calculatedContentDTOs.size() % 1000;
-        if (remaining > 0) {
-            cisProgressBar.increment(remaining);
+                
+                // 批量插入新快照
+                String insertSQL = """
+                    INSERT INTO ContentSnapshot (
+                        content_id, member_id, area_id, publish_time, post_length_level,
+                        read_count_snapshot, like_count_snapshot, comment_count_snapshot,
+                        share_count_snapshot, collect_count_snapshot, hate_count_snapshot,
+                        cis_score
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """;
+                
+                jdbcTemplate.batchUpdate(insertSQL, validNewEntities, validNewEntities.size(),
+                    (ps, entity) -> {
+                        ps.setLong(1, entity.getContentId());
+                        ps.setLong(2, entity.getMemberId());
+                        ps.setInt(3, entity.getAreaId());
+                        ps.setTimestamp(4, java.sql.Timestamp.valueOf(entity.getPublishTime()));
+                        ps.setInt(5, entity.getPostLengthLevel());
+                        ps.setInt(6, entity.getReadCountSnapshot());
+                        ps.setInt(7, entity.getLikeCountSnapshot());
+                        ps.setInt(8, entity.getCommentCountSnapshot());
+                        ps.setInt(9, entity.getShareCountSnapshot());
+                        ps.setInt(10, entity.getCollectCountSnapshot());
+                        ps.setInt(11, entity.getHateCountSnapshot());
+                        ps.setBigDecimal(12, entity.getCisScore());
+                    });
+                log.info("批量插入 {} 条新的 ContentSnapshot 记录", validNewEntities.size());
+            }
         }
-        cisProgressBar.complete();
+        long dbInsertTime = System.currentTimeMillis() - dbInsertStart;
         
-        // 过滤：只保留 member_id 已存在于 Member 表的记录（避免外键约束失败）
-        Set<Long> existingMemberIds = entitiesToSave.stream()
-            .map(ContentSnapshot::getMemberId)
-            .collect(Collectors.toSet());
-        Set<Long> validMemberIds = memberRepository.findAllById(new java.util.ArrayList<>(existingMemberIds)).stream()
-            .map(Member::getMemberId)
-            .collect(Collectors.toSet());
+        // 第二步：遍历并更新数据库中所有现有的 ContentSnapshot 条目
+        // （无论是否拉取到新快照，都要重新计算所有现有内容的分数）
+        log.info("开始遍历并更新数据库中所有现有的 ContentSnapshot 条目...");
         
-        List<ContentSnapshot> validEntities = entitiesToSave.stream()
-            .filter(entity -> validMemberIds.contains(entity.getMemberId()))
-            .collect(Collectors.toList());
+        String selectSQL = "SELECT content_id, member_id, area_id, publish_time, post_length_level, " +
+            "read_count_snapshot, like_count_snapshot, comment_count_snapshot, share_count_snapshot, " +
+            "collect_count_snapshot, hate_count_snapshot FROM ContentSnapshot";
+        List<Map<String, Object>> allExistingSnapshots = jdbcTemplate.queryForList(selectSQL);
+        log.info("查询到 {} 条现有 ContentSnapshot 记录", allExistingSnapshots.size());
         
-        int skippedCount = entitiesToSave.size() - validEntities.size();
-        if (skippedCount > 0) {
-            log.warn("过滤掉 {} 条内容（member_id 不存在于 Member 表）", skippedCount);
-        }
+        // 用于返回所有现有内容的更新后CIS列表
+        List<ContentDataDTO> allExistingContentDTOsWithCIS = new java.util.ArrayList<>();
         
-        // 清理重复数据：删除已有的相同 content_id 记录（防止重复键冲突）
-        long cleanStartTime = System.currentTimeMillis();
-        Set<Long> contentIdsToInsert = validEntities.stream()
-            .map(ContentSnapshot::getContentId)
-            .collect(Collectors.toSet());
-        
-        if (!contentIdsToInsert.isEmpty()) {
-            String deleteSQL = "DELETE FROM ContentSnapshot WHERE content_id IN (" +
-                String.join(",", contentIdsToInsert.stream().map(String::valueOf).toArray(String[]::new)) +
-                ")";
-            int deletedCount = jdbcTemplate.update(deleteSQL);
-            long cleanTime = System.currentTimeMillis() - cleanStartTime;
-            if (deletedCount > 0) {
-                log.info("删除 {} 条重复的 ContentSnapshot 记录，耗时 {} ms", deletedCount, cleanTime);
+        if (allExistingSnapshots.isEmpty()) {
+            log.info("数据库中没有现有的 ContentSnapshot 记录，跳过全量更新。");
+        } else {
+            ProgressBar updateProgressBar = new ProgressBar("内容影响力分数更新（所有现有）", allExistingSnapshots.size());
+            
+            List<ContentSnapshot> entitiesToUpdate = new java.util.ArrayList<>();
+            final int[] updateFilteredCount = {0};
+            final int[] updateProcessedCount = {0};
+            
+            // 收集所有更新后的DTO，用于后续DES计算
+            allExistingContentDTOsWithCIS = allExistingSnapshots.stream()
+                .map(map -> {
+                    long mapStart = System.nanoTime();
+                    ContentDataDTO dto = this.mapToDTOWithAreaId(map);  // 直接使用area_id
+                    mappingTime[0] += (System.nanoTime() - mapStart) / 1_000_000;
+                    return dto;
+                })
+                .filter(dto -> {
+                    boolean hasAreaId = dto.getAreaId() != null;
+                    if (!hasAreaId) updateFilteredCount[0]++;
+                    return hasAreaId;
+                })
+                .map(dto -> {
+                    long calcStart = System.nanoTime();
+                    BigDecimal cisScore = ratingAlgorithm.calculateCIS(dto);
+                    if (cisScore == null || cisScore.compareTo(BigDecimal.ZERO) < 0) {
+                        cisScore = BigDecimal.ZERO;
+                    }
+                    calculationTime[0] += (System.nanoTime() - calcStart) / 1_000_000;
+                    dto.setCisScore(cisScore);
+                    
+                    // 同时准备用于更新的Entity
+                    ContentSnapshot entity = convertToContentSnapshot(dto);
+                    entitiesToUpdate.add(entity);
+                    
+                    updateProcessedCount[0]++;
+                    if (updateProcessedCount[0] % 1000 == 0) {
+                        updateProgressBar.increment(1000);
+                    }
+                    
+                    return dto;  // 返回更新后的DTO
+                })
+                .collect(Collectors.toList());
+            
+            log.info("第二阶段处理完成，收集到 {} 条DTO（过滤: {}），准备更新 {} 条Entity", 
+                allExistingContentDTOsWithCIS.size(), updateFilteredCount[0], entitiesToUpdate.size());
+            
+            int updateRemaining = allExistingContentDTOsWithCIS.size() % 1000;
+            if (updateRemaining > 0) {
+                updateProgressBar.increment(updateRemaining);
+            }
+            updateProgressBar.complete();
+            
+            // 批量更新所有现有记录的 CIS 分数
+            if (!entitiesToUpdate.isEmpty()) {
+                String updateSQL = "UPDATE ContentSnapshot SET cis_score = ? WHERE content_id = ?";
+                jdbcTemplate.batchUpdate(updateSQL, entitiesToUpdate, entitiesToUpdate.size(),
+                    (ps, entity) -> {
+                        ps.setBigDecimal(1, entity.getCisScore());
+                        ps.setLong(2, entity.getContentId());
+                    });
+                log.info("批量更新 {} 条现有 ContentSnapshot 记录的 CIS 分数", entitiesToUpdate.size());
             }
         }
         
-        // 使用 JdbcTemplate 批量插入到数据库（避免 Hibernate 自增主键问题）
-        long dbSaveStart = System.currentTimeMillis();
-        String sql = """
-            INSERT INTO ContentSnapshot (
-                content_id, member_id, area_id, publish_time, post_length_level,
-                read_count_snapshot, like_count_snapshot, comment_count_snapshot,
-                share_count_snapshot, collect_count_snapshot, hate_count_snapshot,
-                cis_score
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """;
-        
-        jdbcTemplate.batchUpdate(sql, validEntities, validEntities.size(),
-            (ps, entity) -> {
-                ps.setLong(1, entity.getContentId());
-                ps.setLong(2, entity.getMemberId());
-                ps.setInt(3, entity.getAreaId());
-                ps.setTimestamp(4, java.sql.Timestamp.valueOf(entity.getPublishTime()));
-                ps.setInt(5, entity.getPostLengthLevel());
-                ps.setInt(6, entity.getReadCountSnapshot());
-                ps.setInt(7, entity.getLikeCountSnapshot());
-                ps.setInt(8, entity.getCommentCountSnapshot());
-                ps.setInt(9, entity.getShareCountSnapshot());
-                ps.setInt(10, entity.getCollectCountSnapshot());
-                ps.setInt(11, entity.getHateCountSnapshot());
-                ps.setBigDecimal(12, entity.getCisScore());
-            });
-        long dbSaveTime = System.currentTimeMillis() - dbSaveStart;
-        
         long totalTime = System.currentTimeMillis() - methodStartTime;
-        log.info("CIS计算完成，有效内容: {}, 过滤: {}", calculatedContentDTOs.size(), filteredCount[0]);
+        log.info("CIS计算完成，新快照有效内容: {}, 过滤: {}", calculatedContentDTOs.size(), filteredCount[0]);
         log.info("  - 数据映射耗时: {} ms", mappingTime[0]);
         log.info("  - CIS计算耗时: {} ms", calculationTime[0]);
-        log.info("  - 数据库批量插入耗时: {} ms", dbSaveTime);
+        log.info("  - 数据库操作耗时: {} ms（插入: {} ms）", dbInsertTime + (totalTime - methodStartTime - dbInsertTime), dbInsertTime);
         log.info("  - CIS总耗时: {} ms", totalTime);
+        log.info("  - 返回给DES计算的内容数: {}", allExistingContentDTOsWithCIS.size());
         
-        return calculatedContentDTOs;
+        // 返回所有现有内容的更新后CIS列表（用于DES计算）
+        return allExistingContentDTOsWithCIS;
     }
 
     @Transactional
@@ -542,9 +617,55 @@ public class RatingCalculationService {
                 dto.setAreaId(areaId); 
             }
             
-            // 映射其余字段
-            if (map.get("publish_time") instanceof String) {
-                 dto.setPublishTime(LocalDateTime.parse((String) map.get("publish_time"))); 
+            // 映射其余字段 - publish_time 可能是 String 或 java.sql.Timestamp
+            Object publishTimeObj = map.get("publish_time");
+            if (publishTimeObj != null) {
+                if (publishTimeObj instanceof String) {
+                    dto.setPublishTime(LocalDateTime.parse((String) publishTimeObj));
+                } else if (publishTimeObj instanceof java.sql.Timestamp) {
+                    dto.setPublishTime(((java.sql.Timestamp) publishTimeObj).toLocalDateTime());
+                }
+            }
+            
+            dto.setPostLengthLevel(safeToInteger(map, "post_length_level"));
+
+            // 计数转换为 Long
+            dto.setReadCount(safeToLong(map, "read_count_snapshot"));
+            dto.setLikeCount(safeToLong(map, "like_count_snapshot"));
+            dto.setCommentCount(safeToLong(map, "comment_count_snapshot"));
+            dto.setShareCount(safeToLong(map, "share_count_snapshot"));
+            dto.setCollectCount(safeToLong(map, "collect_count_snapshot"));
+            dto.setHateCount(safeToLong(map, "hate_count_snapshot"));
+            
+        } catch (Exception e) {
+            log.error("映射 Content 快照数据到 DTO 失败: {}", map, e);
+        }
+        return dto;
+    }
+    
+    /**
+     * 辅助方法：将 Map 结构转换为 DTO 对象，直接使用数据库中的 area_id（用于第二阶段）
+     */
+    private ContentDataDTO mapToDTOWithAreaId(Map<String, Object> map) {
+        ContentDataDTO dto = new ContentDataDTO();
+        try {
+            dto.setContentId(safeToLong(map, "content_id"));
+            dto.setMemberId(safeToLong(map, "member_id"));
+            
+            // 直接使用数据库中的 area_id，无需通过 knowledge_tag 转换
+            Object areaIdObj = map.get("area_id");
+            if (areaIdObj instanceof Number) {
+                dto.setAreaId(((Number) areaIdObj).intValue());
+            }
+            
+            // 映射其余字段 - publish_time 可能是 String 或 java.sql.Timestamp
+            Object publishTimeObj = map.get("publish_time");
+            if (publishTimeObj != null) {
+                if (publishTimeObj instanceof String) {
+                    dto.setPublishTime(LocalDateTime.parse((String) publishTimeObj));
+                } else if (publishTimeObj instanceof java.sql.Timestamp) {
+                    dto.setPublishTime(((java.sql.Timestamp) publishTimeObj).toLocalDateTime());
+                }
             }
             
             dto.setPostLengthLevel(safeToInteger(map, "post_length_level"));

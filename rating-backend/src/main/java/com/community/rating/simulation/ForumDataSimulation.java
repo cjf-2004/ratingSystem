@@ -4,9 +4,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.fasterxml.jackson.datatype.jsr310.deser.LocalDateTimeDeserializer;
 import com.fasterxml.jackson.datatype.jsr310.ser.LocalDateTimeSerializer;
-import lombok.Getter;
-import lombok.RequiredArgsConstructor;
+import lombok.*;
 import org.antlr.v4.runtime.misc.Pair;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -15,11 +15,15 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
+import java.time.Duration;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
+import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 import jakarta.annotation.PostConstruct;
@@ -35,29 +39,34 @@ import jakarta.annotation.PostConstruct;
 @RequiredArgsConstructor
 public class ForumDataSimulation {
 
-    private final JdbcTemplate jdbcTemplate;
-
     // 知识领域映射 (使用 String 作为知识领域标签)
     private static final List<String> KNOWLEDGE_AREA_TAGS = List.of(
             "前端开发", "后端开发", "数据科学", "视觉设计", "产品管理", "云计算与运维");
 
+    // 是否使用虚拟时间
+    public static final boolean USE_VIRTUAL_TIME = true;
     // 模拟用户行为特征定义
     private static final int GENERATE_DAYS_RANGE = 300; // 生成数据的时间范围（天）, 需大于180
-    // 起始和结束时间
-    private static final LocalDateTime NOW = TimeSimulation.now();
-    private static final LocalDateTime START_TIME = NOW.minusDays(GENERATE_DAYS_RANGE);
     // 生成用户量
     private static final int SIMULATE_USER_COUNT = 2000;
-    // 是否为保存模式
-    private static final boolean IS_SAVE_MODE = true;
     // 是否为读取模式
-    private static final boolean IS_LOAD_MODE = false;
+    public static final boolean IS_LOAD_MODE = false;
     // 模拟行为文件夹
     private static final String SIMULATION_DATA_FOLDER = "./simulation/";
     // 模拟行为文件
     private static final String SIMULATION_DATA_FILE = SIMULATION_DATA_FOLDER + "forum_simulation_data.json";
+    // 新增阅读量衰减因子
+    public static final double NEW_READ_DECAY_FACTOR = 0.35;
     // 用户行为枚举
     private static final WeightedList<UserBehavior> SIMULATE_USER_BEHAVIORS = new WeightedList<>(List.of(
+            new Pair<>(new UserBehavior(
+                    "沉默浏览型",
+                    new WeightedList<>(List.of(0, 2, 5), List.of(80, 15, 5)),
+                    new WeightedList<>(List.of(0), List.of(1)),
+                    new WeightedList<>(List.of(1, 2, 3), List.of(80, 15, 5)),
+                    new InteractionMetrics(200, 80, 0.005, 0.001, 0.001, 0.002, 0.005),
+                    Optional.empty()
+            ), 30),
             new Pair<>(new UserBehavior(
                     "量产低质型",
                     new WeightedList<>(List.of(60, 90, 150), List.of(50, 35, 15)),
@@ -65,7 +74,7 @@ public class ForumDataSimulation {
                     new WeightedList<>(List.of(1, 2, 3), List.of(80, 18, 2)),
                     new InteractionMetrics(800, 250, 0.01, 0.002, 0.001, 0.003, 0.025),
                     Optional.empty()
-            ), 6),
+            ), 4),
             new Pair<>(new UserBehavior(
                     "稳健创作型",
                     new WeightedList<>(List.of(24, 36, 60), List.of(60, 30, 10)),
@@ -73,7 +82,7 @@ public class ForumDataSimulation {
                     new WeightedList<>(List.of(1, 2, 3), List.of(20, 60, 20)),
                     new InteractionMetrics(8000, 3000, 0.05, 0.015, 0.008, 0.012, 0.004),
                     Optional.of(new SpecialPostRules(0.01, 5.0, 1.6, 1.6, 1.6, 1.6, 1.6))
-            ), 22),
+            ), 15),
             new Pair<>(new UserBehavior(
                     "爆款拉动型",
                     new WeightedList<>(List.of(24, 36, 72), List.of(50, 40, 10)),
@@ -81,7 +90,7 @@ public class ForumDataSimulation {
                     new WeightedList<>(List.of(1, 2, 3), List.of(30, 50, 20)),
                     new InteractionMetrics(4000, 2500, 0.04, 0.01, 0.006, 0.01, 0.005),
                     Optional.of(new SpecialPostRules(0.08, 10.0, 1.8, 1.8, 1.8, 1.8, 1.8))
-            ), 12),
+            ), 8),
             new Pair<>(new UserBehavior(
                     "长文深度收藏型",
                     new WeightedList<>(List.of(12, 18, 30), List.of(70, 25, 5)),
@@ -89,7 +98,7 @@ public class ForumDataSimulation {
                     new WeightedList<>(List.of(1, 2, 3), List.of(5, 35, 60)),
                     new InteractionMetrics(5500, 2000, 0.05, 0.03, 0.012, 0.06, 0.003),
                     Optional.empty()
-            ), 8),
+            ), 6),
             new Pair<>(new UserBehavior(
                     "传播导向型",
                     new WeightedList<>(List.of(36, 48, 80), List.of(50, 35, 15)),
@@ -97,7 +106,7 @@ public class ForumDataSimulation {
                     new WeightedList<>(List.of(1, 2, 3), List.of(70, 25, 5)),
                     new InteractionMetrics(12000, 6000, 0.03, 0.006, 0.05, 0.006, 0.006),
                     Optional.empty()
-            ), 8),
+            ), 6),
             new Pair<>(new UserBehavior(
                     "讨论驱动型",
                     new WeightedList<>(List.of(18, 24, 36), List.of(60, 30, 10)),
@@ -105,7 +114,7 @@ public class ForumDataSimulation {
                     new WeightedList<>(List.of(1, 2, 3), List.of(10, 55, 35)),
                     new InteractionMetrics(4500, 2200, 0.035, 0.05, 0.008, 0.018, 0.007),
                     Optional.empty()
-            ), 8),
+            ), 6),
             new Pair<>(new UserBehavior(
                     "争议两极型",
                     new WeightedList<>(List.of(12, 16, 30), List.of(60, 30, 10)),
@@ -113,7 +122,7 @@ public class ForumDataSimulation {
                     new WeightedList<>(List.of(1, 2, 3), List.of(30, 50, 20)),
                     new InteractionMetrics(6000, 4000, 0.03, 0.05, 0.01, 0.01, 0.03),
                     Optional.of(new SpecialPostRules(0.2, 4.0, 2.0, 2.0, 2.0, 1.0, 2.0))
-            ), 5),
+            ), 4),
             new Pair<>(new UserBehavior(
                     "标题党低转化型",
                     new WeightedList<>(List.of(20, 30, 50), List.of(50, 35, 15)),
@@ -121,7 +130,7 @@ public class ForumDataSimulation {
                     new WeightedList<>(List.of(1, 2, 3), List.of(70, 25, 5)),
                     new InteractionMetrics(30000, 15000, 0.007, 0.002, 0.005, 0.001, 0.012),
                     Optional.empty()
-            ), 12),
+            ), 8),
             new Pair<>(new UserBehavior(
                     "单领域精品型",
                     new WeightedList<>(List.of(10, 15, 24), List.of(70, 25, 5)),
@@ -129,7 +138,7 @@ public class ForumDataSimulation {
                     new WeightedList<>(List.of(1, 2, 3), List.of(10, 40, 50)),
                     new InteractionMetrics(2500, 900, 0.04, 0.018, 0.012, 0.07, 0.002),
                     Optional.of(new SpecialPostRules(0.25, 3.0, 1.5, 1.5, 1.5, 2.0, 1.5))
-            ), 7),
+            ), 5),
             new Pair<>(new UserBehavior(
                     "单领域勤奋型",
                     new WeightedList<>(List.of(30, 45, 70), List.of(40, 40, 20)),
@@ -137,8 +146,10 @@ public class ForumDataSimulation {
                     new WeightedList<>(List.of(1, 2, 3), List.of(30, 60, 10)),
                     new InteractionMetrics(2000, 700, 0.025, 0.006, 0.004, 0.013, 0.005),
                     Optional.empty()
-            ), 12)
+            ), 8)
     ));
+    // 依赖注入 JdbcTemplate 用于原生 SQL 操作
+    private final JdbcTemplate jdbcTemplate;
 
     private static final Logger log = LoggerFactory.getLogger(ForumDataSimulation.class);
     private final Random random = new Random();
@@ -150,6 +161,9 @@ public class ForumDataSimulation {
 
     // 模拟保存数据结构
     private final ObjectMapper objectMapper = new ObjectMapper();
+    private final SimulationSaveData fullSaveData = new SimulationSaveData(
+            new ArrayList<>(), new ArrayList<>(), TimeSimulation.now()
+    );
 
     // 唯一 ID 生成器
     private final AtomicLong memberIdCounter = new AtomicLong(103);
@@ -157,8 +171,15 @@ public class ForumDataSimulation {
     private final AtomicLong eventIdCounter = new AtomicLong(1);
 
     // 内部数据实体定义 (使用 Record 模拟)
-    // MemberRecord 匹配 Member 表
-    private record MemberRecord(long id, String name, LocalDateTime joinDate) {}
+    // MemberRecord 匹配 Member 表, 多了对应的
+    private record MemberRecord(
+            long id,
+            String name,
+            LocalDateTime joinDate,
+            int behaviorIndex,
+            List<String> domains,
+            int postCountBase
+    ) {}
 
     // ContentRecord 匹配 ContentSnapshot 表（不含 cis_score）
     private record ContentRecord(
@@ -195,10 +216,33 @@ public class ForumDataSimulation {
             double sharePercent, double collectPercent, double hatePercent
     ) {}
 
+
     private record InteractionCount(
             long readCount, long likeCount, long commentCount,
             long shareCount, long collectCount, long hateCount
-    ) {}
+    ) {
+        public InteractionCount multiply(double factor) {
+            return new InteractionCount(
+                    (long) (readCount * factor),
+                    (long) (likeCount * factor),
+                    (long) (commentCount * factor),
+                    (long) (shareCount * factor),
+                    (long) (collectCount * factor),
+                    (long) (hateCount * factor)
+            );
+        }
+
+        public InteractionCount multiply(SpecialPostRules rules) {
+            return new InteractionCount(
+                    (long) (readCount * rules.readMultiplier),
+                    (long) (likeCount * rules.likeMultiplier),
+                    (long) (commentCount * rules.commentMultiplier),
+                    (long) (shareCount * rules.shareMultiplier),
+                    (long) (collectCount * rules.collectMultiplier),
+                    (long) (hateCount * rules.hateMultiplier)
+            );
+        }
+    }
 
     // 占位符，未来可扩展额外规则
     private interface ExtraRules {}
@@ -212,11 +256,13 @@ public class ForumDataSimulation {
     ) implements ExtraRules {}
 
 
-    private record SimulationSaveData(
-            List<MemberRecord> members,
-            List<ContentRecord> contents,
-            LocalDateTime timestamp
-    ) {}
+    @AllArgsConstructor
+    @NoArgsConstructor
+    private static class SimulationSaveData {
+        public List<MemberRecord> members;
+        public List<ContentRecord> contents;
+        public LocalDateTime timestamp;
+    }
 
     // 初始化方法，由Spring在构造函数执行后自动调用
     @PostConstruct
@@ -238,10 +284,7 @@ public class ForumDataSimulation {
             loadFromFile();
         } else {
             simulate();
-            if (IS_SAVE_MODE) {
-                // 保存数据到文件
-                saveToFile();
-            }
+            saveToFile();
         }
     }
 
@@ -287,107 +330,181 @@ public class ForumDataSimulation {
     // 主模拟方法
     private void simulate() {
         int[] distributes = SIMULATE_USER_BEHAVIORS.getDistributeList(SIMULATE_USER_COUNT);
+        LocalDateTime now = TimeSimulation.now();
         for (int i = 0; i < SIMULATE_USER_BEHAVIORS.size(); i++) {
             UserBehavior behavior = SIMULATE_USER_BEHAVIORS.getElements().get(i);
             int userCount = distributes[i];
             log.info("生成用户行为类型 '{}' 的用户，共计 {} 人。", behavior.behaviorName, userCount);
             for (int j = 0; j < userCount; j++) {
-                generateUserOfBehavior(behavior);
+                generateUserOfBehavior(i, now);
             }
+        }
+        fullSaveData.timestamp = now;
+        log.info("初始模拟完成，共生成用户 {} 人，内容 {} 篇。)", fullSaveData.members.size(), fullSaveData.contents.size());
+    }
+
+    // 持续生成方法
+    @Scheduled(initialDelay = 15, fixedRate = 30, timeUnit = TimeUnit.SECONDS) // 每1分钟执行一次
+    private void simulateDailyUpdates() {
+        LocalDateTime now = TimeSimulation.now();
+        LocalDate nowDate = now.toLocalDate();
+        LocalDate lastUpdateDate = fullSaveData.timestamp.toLocalDate();
+        // 计算与上次更新是否在同一天
+        if (nowDate.isAfter(lastUpdateDate)) {
+            log.info("检测到新的一天{}，开始更新并生成新的内容数据...", now.toLocalDate());
+            // 更新已有内容的阅读量等数据
+            updatePreviousContents(nowDate);
+            // 生成新的内容数据
+            generateNewDayContent(nowDate);
+            fullSaveData.timestamp = now;
+            // 保存到文件
+            saveToFile();
         }
     }
 
     // 根据用户特征生成用户
-    private void generateUserOfBehavior(UserBehavior behavior) {
+    private void generateUserOfBehavior(int behaviorIndex, LocalDateTime now) {
+        UserBehavior behavior = SIMULATE_USER_BEHAVIORS.getElements().get(behaviorIndex);
         // 计算需要抽取的领域数
         int domainCount = behavior.domains.size();
         // 抽取领域
         List<String> domains = sample(KNOWLEDGE_AREA_TAGS, domainCount);
+        int postCountBase = sample(behavior.postCountBase);
+
+        LocalDateTime registerTime = now.minusDays(GENERATE_DAYS_RANGE);
         // 生成用户
-        MemberRecord memberRecord = generateRandomMember(behavior.behaviorName, domains.get(0));
+        MemberRecord memberRecord = generateRandomMember(behaviorIndex, domains, postCountBase, registerTime);
 
         // 计算需要生成的文章数
-        int articlesToGenerate = randAround(sample(behavior.postCountBase), 10);
+        int articlesToGenerate = randAround(postCountBase, 10);
         // 生成文章发布时间
-        List<LocalDateTime> publishDates = sampleDates(START_TIME, GENERATE_DAYS_RANGE, articlesToGenerate);
+        List<LocalDateTime> publishDates = sampleDates(registerTime, GENERATE_DAYS_RANGE, articlesToGenerate);
 
         for (LocalDateTime publishDate : publishDates) {
-            // 随机选择领域和长度等级
-            String domainTag = domains.get(sample(behavior.domains));
-            int lengthLevel = sample(behavior.lengthLevels);
 
-            // 生成阅读量, 正态分布
-            long readCount = (long) Math.max(0, normalRandom(behavior.interaction.readMean, behavior.interaction.readStdDev));
+            long elapsedDays = ChronoUnit.DAYS.between(publishDate.toLocalDate(), now.toLocalDate());
 
-            InteractionCount interactionCount = new InteractionCount(
-                    readCount,
-                    randAround((long) (readCount * behavior.interaction.likePercent), 10),
-                    randAround((long) (readCount * behavior.interaction.commentPercent), 10),
-                    randAround((long) (readCount * behavior.interaction.sharePercent), 10),
-                    randAround((long) (readCount * behavior.interaction.collectPercent), 10),
-                    randAround((long) (readCount * behavior.interaction.hatePercent), 10)
-            );
-
-            // 检查是否应用特殊文章规则
-            if (behavior.extraRules.isPresent()) {
-                ExtraRules extraRules = behavior.extraRules.get();
-                if (extraRules instanceof SpecialPostRules specialRules) {
-                    // 抽中
-                    if (random.nextDouble() < specialRules.percent) {
-                        interactionCount = new InteractionCount(
-                                (long) (interactionCount.readCount * specialRules.readMultiplier),
-                                (long) (interactionCount.likeCount * specialRules.likeMultiplier),
-                                (long) (interactionCount.commentCount * specialRules.commentMultiplier),
-                                (long) (interactionCount.shareCount * specialRules.shareMultiplier),
-                                (long) (interactionCount.collectCount * specialRules.collectMultiplier),
-                                (long) (interactionCount.hateCount * specialRules.hateMultiplier)
-                        );
-                    }
-                } else {
-                    log.warn("未知的额外规则类型: {}", extraRules.getClass().getName());
-                    throw new IllegalArgumentException("未知的额外规则类型");
-                }
-            }
-
-            // 生成内容记录
-            ContentRecord content = generateContent(
+            ContentRecord content = generateSingleArticle(
+                    behavior,
+                    domains,
                     memberRecord.id,
-                    domainTag,
                     publishDate,
-                    lengthLevel,
-                    interactionCount
+                    elapsedDays
             );
 
             contentDB.put(content.id, content);
-            logContent(content);
+            fullSaveData.contents.add(content);
+//            logContent(content);
+        }
+    }
+
+    private void generateNewDayContent(LocalDate currentDate) {
+        // 遍历所有成员，按其行为特征生成新内容
+        for (MemberRecord member : fullSaveData.members) {
+            // 成员的行为特征
+            UserBehavior behavior = SIMULATE_USER_BEHAVIORS.getElements().get(member.behaviorIndex);
+            // 抽取领域
+            List<String> domains = member.domains;
+            // 计算需要生成的文章数
+            WeightedList<Boolean> postDecision = new WeightedList<>(
+                    List.of(true, false), List.of(member.postCountBase, GENERATE_DAYS_RANGE - member.postCountBase)
+            );
+            int articlesToGenerate = sample(postDecision) ? 1 : 0;
+            // 生成文章发布时间
+            LocalDateTime startOfDay = currentDate.atStartOfDay();
+            List<LocalDateTime> publishDates = sampleDates(startOfDay, 1, articlesToGenerate);
+
+            for (LocalDateTime publishDate : publishDates) {
+
+                ContentRecord content = generateSingleArticle(
+                        behavior,
+                        domains,
+                        member.id,
+                        publishDate,
+                        0
+                );
+
+                contentDB.put(content.id, content);
+                fullSaveData.contents.add(content);
+//                logContent(content);
+            }
+        }
+    }
+
+    private void updatePreviousContents(LocalDate nowDate) {
+        for (int i = 0; i < fullSaveData.contents.size(); i++) {
+            ContentRecord oldContent = fullSaveData.contents.get(i);
+            long elapsedDays = ChronoUnit.DAYS.between(oldContent.publishTime.toLocalDate(), nowDate);
+            if (elapsedDays <= 0) {
+                continue; // 刚发布的内容不更新
+            }
+            // 计算新的互动数据
+            ContentRecord updatedContent = getContentRecord(oldContent, elapsedDays);
+
+            // 替换旧内容
+            fullSaveData.contents.set(i, updatedContent);
+            contentDB.put(updatedContent.id, updatedContent);
+        }
+    }
+
+    private ContentRecord getContentRecord(ContentRecord oldContent, long elapsedDays) {
+        InteractionCount newInteractions = new InteractionCount(
+                oldContent.readCount, oldContent.likeCount, oldContent.commentCount, oldContent.shareCount, oldContent.collectCount, oldContent.hateCount
+        ).multiply(1. + calcDecayFactor(elapsedDays));
+
+        // 更新内容记录
+        ContentRecord updatedContent = new ContentRecord(
+                oldContent.id, oldContent.authorId, oldContent.title, oldContent.publishTime, oldContent.knowledgeTag, oldContent.postLengthLevel,
+                newInteractions.readCount, newInteractions.likeCount, newInteractions.commentCount, newInteractions.shareCount, newInteractions.collectCount, newInteractions.hateCount
+        );
+        return updatedContent;
+    }
+
+
+    private ContentRecord generateSingleArticle(
+            UserBehavior behavior,
+            List<String> domains,
+            long memberId,
+            LocalDateTime publishDate,
+            long elapsedDays
+    ) {
+        // 随机选择领域和长度等级
+        String domainTag = domains.get(sample(behavior.domains));
+        int lengthLevel = sample(behavior.lengthLevels);
+
+        // 生成阅读量, 正态分布
+        long readCount = (long) Math.max(0, normalRandom(behavior.interaction.readMean, behavior.interaction.readStdDev));
+
+        InteractionCount interactionCount = new InteractionCount(
+                readCount,
+                randAround((long) (readCount * behavior.interaction.likePercent), 10),
+                randAround((long) (readCount * behavior.interaction.commentPercent), 10),
+                randAround((long) (readCount * behavior.interaction.sharePercent), 10),
+                randAround((long) (readCount * behavior.interaction.collectPercent), 10),
+                randAround((long) (readCount * behavior.interaction.hatePercent), 10)
+        ).multiply(calcAccumulatedDecayFactor(elapsedDays));
+
+        // 检查是否应用特殊文章规则
+        if (behavior.extraRules.isPresent()) {
+            ExtraRules extraRules = behavior.extraRules.get();
+            if (extraRules instanceof SpecialPostRules specialRules) {
+                // 抽中
+                if (random.nextDouble() < specialRules.percent) {
+                    interactionCount = interactionCount.multiply(specialRules);
+                }
+            } else {
+                log.warn("未知的额外规则类型: {}", extraRules.getClass().getName());
+                throw new IllegalArgumentException("未知的额外规则类型");
+            }
         }
 
-    }
-    
-    // 辅助初始化方法
-    private ContentRecord generateContent(
-            long authorId,
-            String knowledgeTag,
-            LocalDateTime publishTime,
-            int lengthLevel,
-            InteractionCount interaction
-
-    ) {
-        long newContentId = contentIdCounter.incrementAndGet();
-
-        return new ContentRecord(
-                newContentId,
-                authorId,
-                "新内容标题-" + newContentId,
-                publishTime,
-                knowledgeTag,
+        // 生成内容记录
+        return fillContent(
+                memberId,
+                domainTag,
+                publishDate,
                 lengthLevel,
-                interaction.readCount,
-                interaction.likeCount,
-                interaction.commentCount,
-                interaction.shareCount,
-                interaction.collectCount,
-                interaction.hateCount
+                interactionCount
         );
     }
 
@@ -417,13 +534,8 @@ public class ForumDataSimulation {
     }
 
     private void saveToFile() {
-        SimulationSaveData saveData = new SimulationSaveData(
-                new ArrayList<>(memberDB.values()),
-                new ArrayList<>(contentDB.values()),
-                NOW
-        );
         try {
-            objectMapper.writeValue(new FileOutputStream(SIMULATION_DATA_FILE), saveData);
+            objectMapper.writeValue(new FileOutputStream(SIMULATION_DATA_FILE), fullSaveData);
             log.info("模拟数据已保存到 {} 文件。", SIMULATION_DATA_FILE);
         } catch (Exception e) {
             log.error("保存模拟数据时出错: {}", e.getMessage());
@@ -433,13 +545,16 @@ public class ForumDataSimulation {
     private void loadFromFile() {
         try {
             SimulationSaveData saveData = objectMapper.readValue(new FileInputStream(SIMULATION_DATA_FILE), SimulationSaveData.class);
-            for (MemberRecord member : saveData.members()) {
+            for (MemberRecord member : saveData.members) {
                 memberDB.put(member.id, member);
             }
-            for (ContentRecord content : saveData.contents()) {
+            fullSaveData.members.addAll(saveData.members);
+            for (ContentRecord content : saveData.contents) {
                 contentDB.put(content.id, content);
             }
-            log.info("模拟数据已从 {} 文件加载。", SIMULATION_DATA_FILE);
+            fullSaveData.contents.addAll(saveData.contents);
+            fullSaveData.timestamp = saveData.timestamp;
+            log.info("模拟数据已从 {} 文件加载, 保存时间: {}。", SIMULATION_DATA_FILE, saveData.timestamp);
         } catch (Exception e) {
             log.error("加载模拟数据时出错: {}", e.getMessage());
         }
@@ -464,24 +579,68 @@ public class ForumDataSimulation {
 //        }
 //    }
     /**
-     * 新增方法：随机生成一个新的用户（MemberRecord）。
+     * 新增方法：生成一个新的用户（MemberRecord）。
      */
-    private MemberRecord generateRandomMember(String behaviorName, String domainTag) {
+    private MemberRecord generateRandomMember(
+            int behaviorIndex,
+            List<String> domains,
+            int postCountBase,
+            LocalDateTime registerTime
+    ) {
         // 获取递增的成员 ID
         long newMemberId = memberIdCounter.incrementAndGet();
 
-        String newName = behaviorName + newMemberId + domainTag;
+        String behaviorName = SIMULATE_USER_BEHAVIORS.getElements().get(behaviorIndex).behaviorName;
 
-        // 设置加入时间在过去 GENERATE_DAYS_RANGE 天内
-        LocalDateTime newJoinDate = LocalDateTime.now().minusDays(GENERATE_DAYS_RANGE);
+        String newName = behaviorName + '-' + newMemberId + '-' + String.join("+", domains);
 
         // 创建新成员
-        MemberRecord newMember = new MemberRecord(newMemberId, newName, newJoinDate);
+        MemberRecord newMember = new MemberRecord(newMemberId, newName, registerTime, behaviorIndex, domains, postCountBase);
         memberDB.put(newMemberId, newMember);
+        fullSaveData.members.add(newMember);
         // 显示日志
-        log.info("【新成员】注册成功: ID={}, 姓名={}, 加入时间={}", newMemberId, newName, newJoinDate);
+//        log.info("【新成员】注册成功: ID={}, 姓名={}, 加入时间={}", newMemberId, newName, newJoinDate);
 
         return newMember;
+    }
+
+    // 辅助初始化方法
+    private ContentRecord fillContent(
+            long authorId,
+            String knowledgeTag,
+            LocalDateTime publishTime,
+            int lengthLevel,
+            InteractionCount interaction
+    ) {
+        long newContentId = contentIdCounter.incrementAndGet();
+
+        return new ContentRecord(
+                newContentId,
+                authorId,
+                "新内容标题-" + newContentId,
+                publishTime,
+                knowledgeTag,
+                lengthLevel,
+                interaction.readCount,
+                interaction.likeCount,
+                interaction.commentCount,
+                interaction.shareCount,
+                interaction.collectCount,
+                interaction.hateCount
+        );
+    }
+
+    // 计算衰减因子
+    private double calcDecayFactor(long daysElapsed) {
+        //   y(x,t) = x * beta * (1-beta)^t
+        return NEW_READ_DECAY_FACTOR * Math.pow(1 - NEW_READ_DECAY_FACTOR, daysElapsed);
+    }
+
+    // 计算累积衰减因子
+    private double calcAccumulatedDecayFactor(long daysElapsed) {
+        // 累积衰减因子计算公式
+        // S(t) = beta * (1 - (1 - beta)^t) / beta = 1 - (1 - beta)^t
+        return 1 - Math.pow(1 - NEW_READ_DECAY_FACTOR, daysElapsed + 1);
     }
 
 //    private void generateRandomInteraction() {
@@ -523,34 +682,6 @@ public class ForumDataSimulation {
 //                case HATE -> content.hateCount().incrementAndGet();
 //            }
 //        }
-//    }
-    
-//    private void generateRandomContent() {
-//        Long newMemberId = memberDB.keySet().stream().skip(random.nextInt(memberDB.size())).findFirst().orElse(101L);
-//        Long newContentId = contentIdCounter.incrementAndGet();
-//
-//        // 随机分配知识领域标签
-//        String randomTag = KNOWLEDGE_AREA_TAGS.get(random.nextInt(KNOWLEDGE_AREA_TAGS.size()));
-//
-//        // 随机分配帖子长度等级 (1, 2, or 3)
-//        int lengthLevel = random.nextInt(3) + 1;
-//
-//        ContentRecord newContent = new ContentRecord(
-//                newContentId,
-//                newMemberId,
-//                "新内容标题-" + newContentId,
-//                LocalDateTime.now(),
-//                randomTag,
-//                lengthLevel,
-//                new AtomicLong(random.nextInt(10) + 1), // 初始阅读数
-//                new AtomicLong(0),
-//                new AtomicLong(0),
-//                new AtomicLong(0),
-//                new AtomicLong(0),
-//                new AtomicLong(0)
-//        );
-//        contentDB.put(newContentId, newContent);
-//        log.info("生成新内容: ID={}, 作者={}, 领域={}, 长度={}", newContentId, newMemberId, randomTag, lengthLevel);
 //    }
     
     
@@ -600,31 +731,35 @@ public class ForumDataSimulation {
     }
 
     /**
-     * 接口：提供最新的全量内容数据快照。
+     * 接口：提供最新的增量内容数据快照。
      * 返回结构已对齐 ContentSnapshot 表结构（不含 cis_score）。
      * @return 内容快照列表（DTOs）
      */
     public List<Map<String, Object>> getContentSnapshot() {
-         log.info("【评级系统 PULL】拉取内容快照 (全量)。");
-         return contentDB.values().stream()
+         log.info("【评级系统 PULL】拉取内容快照 (增量)。");
+        List<Map<String, Object>> result = contentDB.values().stream()
                 .map(this::mapContentRecordToSnapshot) // 使用方法引用，明确类型
-                .collect(Collectors.toList());
+                .toList();
+        contentDB.clear();
+        return result;
     }
 
     /**
-     * 接口：提供最新的全量成员数据快照。
+     * 接口：提供最新的增量成员数据快照。
      * 返回结构已对齐 Member 表结构。
      * @return 成员快照列表（DTOs）
      */
     public List<Map<String, Object>> getMemberSnapshot() {
-        log.info("【评级系统 PULL】拉取成员快照 (全量)。");
-        return memberDB.values().stream()
+        log.info("【评级系统 PULL】拉取成员快照 (增量)。");
+        List<Map<String, Object>> result = memberDB.values().stream()
                .map(m -> Map.<String, Object>of(
                        "member_id", m.id,
                        "name", m.name,
                        "join_date", m.joinDate.toString()
                ))
-               .collect(Collectors.toList());
+               .toList();
+        memberDB.clear();
+        return result;
     }
 
     /**
@@ -708,7 +843,18 @@ public class ForumDataSimulation {
             }
             // 然后分配剩余部分
             if (remain > 0) {
-                // 之后再细化算法吧, 大致是需要计算小数, 然后考虑哪些向上取整哪些向下取整
+                List<Pair<Integer, Double>> fractionalParts = new ArrayList<>();
+                for (int i = 0; i < this.size(); i++) {
+                    double exact = (weights.get(i) * (num / (double) totalWeight));
+                    double fractional = exact - Math.floor(exact);
+                    fractionalParts.add(new Pair<>(i, fractional));
+                }
+                // 按小数部分排序，优先分配给小数部分大的
+                fractionalParts.sort((a, b) -> Double.compare(b.b, a.b));
+                for (int i = 0; i < remain; i++) {
+                    int index = fractionalParts.get(i).a;
+                    distributes[index] += 1;
+                }
             }
 
             return distributes;
