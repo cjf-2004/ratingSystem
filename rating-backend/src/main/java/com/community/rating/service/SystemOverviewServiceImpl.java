@@ -70,7 +70,7 @@ public class SystemOverviewServiceImpl implements SystemOverviewService {
         Long totalMembers = memberRepository.countTotalMembers();
         Long totalContents = contentSnapshotRepository.count();
         Long newContentsToday = contentSnapshotRepository.countByPublishTimeAfter(startOfDay);
-        Long newAchievementsToday = achievementStatusRepository.countByAchievedTimeAfter(startOfDay);
+        Long newAchievementsToday = achievementStatusRepository.countByAchievedTimeAfter(TimeSimulation.now());
         Long activeMembers = contentSnapshotRepository.countDistinctMemberIdByPublishTimeAfter(thirtyDaysAgo);
         Double avgDesScore = memberRatingRepository.calculateAverageDesScoreOfLatestRatings();
         String formattedAverageRating = ratingAlgorithm.formatAverageRatingLevel(avgDesScore);
