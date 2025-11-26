@@ -1,5 +1,6 @@
 package com.community.rating.service;
 
+import com.community.rating.util.CalculationStatusManager;
 // 保留原有的imports，添加ProgressBar的import
 import com.community.rating.util.ProgressBar;
 
@@ -15,6 +16,7 @@ import com.community.rating.repository.MemberRepository;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -45,7 +47,6 @@ public class RatingCalculationService {
     private static final Logger log = LoggerFactory.getLogger(RatingCalculationService.class);
     private final ForumDataSimulation forumDataSimulation;
     private final RatingAlgorithm ratingAlgorithm;
-    
     private final KnowledgeAreaRepository knowledgeAreaRepository;
     private final MemberRepository memberRepository; // 新增注入 MemberRepository
     private final AchievementDetectionService achievementDetectionService;
@@ -111,61 +112,75 @@ public class RatingCalculationService {
     /**
      * 核心评级计算逻辑（由虚拟时间触发器调用）
      */
+    // 添加依赖注入
+    @Autowired
+    private CalculationStatusManager calculationStatusManager;
+    
+    // 修改executeDailyRatingCalculation方法
     @Transactional 
     public void executeDailyRatingCalculation() {
         // 【打印虚拟时间】
         LocalDateTime virtualNow = TimeSimulation.now();
         log.info("【虚拟时间定时执行】开始执行定时任务，虚拟时间: {}", virtualNow);
         
-        long totalStartTime = System.currentTimeMillis();
-        Map<String, Long> timingStats = new ConcurrentHashMap<>();
+        // 开始计算前设置标志为true
+        calculationStatusManager.setCalculationInProgress(true);
         
-        // 0. 初始化缓存
-        long cacheStartTime = System.currentTimeMillis();
-        initializeAreaIdCache();
-        timingStats.put("0. 缓存初始化", System.currentTimeMillis() - cacheStartTime);
-        
-        // 1. 成员数据同步
-        log.info("--- 0. 开始执行【成员数据同步】任务 ---");
-        long memberSyncStartTime = System.currentTimeMillis();
-        syncMemberDataFromSnapshot();
-        timingStats.put("1. 成员数据同步", System.currentTimeMillis() - memberSyncStartTime);
-        
-        // 2. CIS 计算
-        log.info("--- 1. 开始执行【内容影响力分数 (CIS)】计算任务 ---");
-        long cisStartTime = System.currentTimeMillis();
-        List<ContentDataDTO> allContentDTOsWithUpdatedCIS = calculateAllContentCIS();
-        timingStats.put("2. CIS计算", System.currentTimeMillis() - cisStartTime);
-
-        // 3. DES 计算
-        log.info("--- 2. 开始执行【成员领域专精度得分 (DES)】计算任务 ---");
-        long desStartTime = System.currentTimeMillis();
-        updateAllMemberRankings(allContentDTOsWithUpdatedCIS);
-        timingStats.put("3. DES计算", System.currentTimeMillis() - desStartTime);
-
-        log.info("--- 评级定时计算任务执行完毕。---");
-
-        // 4. 成就检测
         try {
-            log.info("--- 3. 开始执行【成就检测】计算任务 ---");
-            long achievementStartTime = System.currentTimeMillis();
-            achievementDetectionService.detectAndPersistAchievements();
-            timingStats.put("4. 成就检测", System.currentTimeMillis() - achievementStartTime);
-        } catch (Exception ex) {
-            log.error("成就检测执行失败: {}", ex.getMessage(), ex);
-            timingStats.put("4. 成就检测", System.currentTimeMillis() - System.currentTimeMillis());
+            long totalStartTime = System.currentTimeMillis();
+            Map<String, Long> timingStats = new ConcurrentHashMap<>();
+            
+            // 0. 初始化缓存
+            long cacheStartTime = System.currentTimeMillis();
+            initializeAreaIdCache();
+            timingStats.put("0. 缓存初始化", System.currentTimeMillis() - cacheStartTime);
+            
+            // 1. 成员数据同步
+            log.info("--- 0. 开始执行【成员数据同步】任务 ---");
+            long memberSyncStartTime = System.currentTimeMillis();
+            syncMemberDataFromSnapshot();
+            timingStats.put("1. 成员数据同步", System.currentTimeMillis() - memberSyncStartTime);
+            
+            // 2. CIS 计算
+            log.info("--- 1. 开始执行【内容影响力分数 (CIS)】计算任务 ---");
+            long cisStartTime = System.currentTimeMillis();
+            List<ContentDataDTO> allContentDTOsWithUpdatedCIS = calculateAllContentCIS();
+            timingStats.put("2. CIS计算", System.currentTimeMillis() - cisStartTime);
+    
+            // 3. DES 计算
+            log.info("--- 2. 开始执行【成员领域专精度得分 (DES)】计算任务 ---");
+            long desStartTime = System.currentTimeMillis();
+            updateAllMemberRankings(allContentDTOsWithUpdatedCIS);
+            timingStats.put("3. DES计算", System.currentTimeMillis() - desStartTime);
+    
+            log.info("--- 评级定时计算任务执行完毕。---");
+    
+            // 4. 成就检测
+            try {
+                log.info("--- 3. 开始执行【成就检测】计算任务 ---");
+                long achievementStartTime = System.currentTimeMillis();
+                achievementDetectionService.detectAndPersistAchievements();
+                timingStats.put("4. 成就检测", System.currentTimeMillis() - achievementStartTime);
+            } catch (Exception ex) {
+                log.error("成就检测执行失败: {}", ex.getMessage(), ex);
+                timingStats.put("4. 成就检测", System.currentTimeMillis() - System.currentTimeMillis());
+            }
+    
+            log.info("--- 成就检测任务执行完毕。---");
+            
+            // 计算总耗时
+            long totalTime = System.currentTimeMillis() - totalStartTime;
+            timingStats.put("总耗时", totalTime);
+            
+            // 打印性能统计报告
+            printPerformanceReport(timingStats);
+        } finally {
+            // 无论计算是否成功，最终都要设置标志为false
+            calculationStatusManager.setCalculationInProgress(false);
+            log.info("评分计算结束，已设置计算状态标志为false");
         }
-
-        log.info("--- 成就检测任务执行完毕。---");
-        
-        // 计算总耗时
-        long totalTime = System.currentTimeMillis() - totalStartTime;
-        timingStats.put("总耗时", totalTime);
-        
-        // 打印性能统计报告
-        printPerformanceReport(timingStats);
     }
-
+    
     /**
      * 新增方法：从论坛快照中同步成员数据。
      * 使用 REQUIRES_NEW 确保该方法在独立事务中运行，并在完成后立即提交，
