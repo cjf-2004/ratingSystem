@@ -16,6 +16,10 @@ public interface ContentSnapshotRepository extends JpaRepository<ContentSnapshot
     // ContentSnapshot (单表): countByPublishTimeAfter()
     Long countByPublishTimeAfter(LocalDateTime time);
 
+    // ContentSnapshot (单表): countByPublishTimeBetween()
+    @Query(value = "SELECT COUNT(*) FROM contentsnapshot c WHERE c.publish_time >= :start AND c.publish_time < :end", nativeQuery = true)
+    Long countByPublishTimeBetween(@Param("start") LocalDateTime start, @Param("end") LocalDateTime end);
+
     // ContentSnapshot (单表/跨字段统计): countDistinctMemberIdByPublishTimeAfter()
     @Query(value = "SELECT COUNT(DISTINCT c.member_id) FROM contentsnapshot c WHERE c.publish_time > :time", nativeQuery = true)
     Long countDistinctMemberIdByPublishTimeAfter(LocalDateTime time);

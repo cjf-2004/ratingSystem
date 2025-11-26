@@ -30,7 +30,7 @@ public class TimeSimulation {
         private static final String STORE_FOLDER = "./simulation";
         private static final String STORE_FILE = "virtual_time.txt";
 
-        private static final int SPEED_MULTIPLIER = 60 * 24 * 60 / 30; // 30 秒推进 1 天
+        private static final int SPEED_MULTIPLIER = 60 * 24 * 60 / 120; // 120 秒推进 1 天
 
         private static final DateTimeFormatter FMT = DateTimeFormatter.ISO_LOCAL_DATE_TIME;
         private static final Path STORE_DIR = Paths.get(STORE_FOLDER);

@@ -11,6 +11,9 @@ public interface AchievementStatusRepository extends JpaRepository<AchievementSt
     // AchievementStatus (单表): countByAchievedTimeAfter()
     Long countByAchievedTimeAfter(LocalDateTime time);
     
+    // 查询指定时间范围内产生的成就数量
+    Long countByAchievedTimeBetween(LocalDateTime start, LocalDateTime end);
+    
     // 检查成员是否已领取某个成就
     boolean existsByMemberIdAndAchievementKey(Long memberId, String achievementKey);
     

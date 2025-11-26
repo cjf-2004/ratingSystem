@@ -23,6 +23,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -35,6 +36,8 @@ import java.util.stream.Collectors;
  * 职责：定时任务调度、数据拉取、结果存储的协调者。
  * 已重构，适配表结构：使用 areaId (Integer) 替代 knowledgeTag (String)。
  * 新增：领域标签到 ID 的解析和缓存逻辑。
+ * 
+ * 【虚拟时间定时】每天虚拟时间凌晨 4 点执行一次，而非固定间隔
  */
 @Service
 public class RatingCalculationService {
@@ -50,6 +53,9 @@ public class RatingCalculationService {
     
     // 缓存：用于存储 knowledgeTag -> areaId 的映射，避免重复查询数据库
     private final Map<String, Integer> tagToIdCache = new ConcurrentHashMap<>();
+    
+    // 【虚拟时间定时】记录上一次执行的虚拟日期，用于检测是否跨越到新的一天凌晨 4 点
+    private LocalDate lastExecutionDate = null;
 
     public RatingCalculationService(
         ForumDataSimulation forumDataSimulation, 
@@ -85,11 +91,32 @@ public class RatingCalculationService {
     }
 
     /**
-     * 接口：每日/定时执行全量评级计算。
+     * 虚拟时间定时触发器：每隔 5 秒检查一次虚拟时间，当达到凌晨 4 点时执行评级计算
+     * 这样可以适配虚拟时间加速的场景（288x 加速）
      */
-    @Scheduled(fixedRate = 30000) // 每 30 秒执行一次
+    @Scheduled(fixedRate = 2000) // 真实时间每 2 秒检查一次
+    public void checkAndExecuteVirtualTimeTask() {
+        LocalDateTime now = TimeSimulation.now();
+        LocalDate currentDate = now.toLocalDate();
+        int currentHour = now.getHour();
+        
+        // 检查虚拟时间是否在凌晨 4 点，且这是新的一天
+        if (currentHour == 4 && !currentDate.equals(lastExecutionDate)) {
+            log.info("【虚拟时间定时触发】检测到虚拟时间凌晨 4 点: {}", now);
+            lastExecutionDate = currentDate;
+            executeDailyRatingCalculation();
+        }
+    }
+    
+    /**
+     * 核心评级计算逻辑（由虚拟时间触发器调用）
+     */
     @Transactional 
     public void executeDailyRatingCalculation() {
+        // 【打印虚拟时间】
+        LocalDateTime virtualNow = TimeSimulation.now();
+        log.info("【虚拟时间定时执行】开始执行定时任务，虚拟时间: {}", virtualNow);
+        
         long totalStartTime = System.currentTimeMillis();
         Map<String, Long> timingStats = new ConcurrentHashMap<>();
         

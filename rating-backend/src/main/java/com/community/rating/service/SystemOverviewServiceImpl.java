@@ -44,39 +44,38 @@ public class SystemOverviewServiceImpl implements SystemOverviewService {
     public SystemOverviewDTO getSystemOverview() {
         
         // --- 1. 时间基准与日期计算 ---
-        LocalDate maxUpdateDate = memberRatingRepository.findMaxUpdateDate();
-        LocalDateTime baseTime;
+        // 【关键】在方法开头固定虚拟时间，确保整个方法中所有时间计算都一致
+        LocalDateTime now = TimeSimulation.now();
+        String lastUpdateTimeString = now.format(ISO_FORMATTER);
         
-        // 【关键修改：将 LocalDate 转换为当日 04:00:00 的 LocalDateTime】
-        if (maxUpdateDate != null) {
-            // 将 LocalDate 转换为 LocalDateTime (使用该日期的 04:00:00)
-            baseTime = maxUpdateDate.atTime(04, 00, 00)
-                                    .atZone(ZoneOffset.UTC) // 假设您希望将其视为 UTC 时间
-                                    .toLocalDateTime(); 
-        } else {
-            // 如果 Repository 返回 null，使用虚拟时间
-            baseTime = TimeSimulation.now();
-        }
-        
-        String lastUpdateTimeString = baseTime.format(ISO_FORMATTER); 
+        // 【调试打印】输出虚拟时间，便于与前端时间对比
+        System.out.println("【SystemOverview】虚拟时间: " + now);
+        System.out.println("【SystemOverview】格式化后: " + lastUpdateTimeString); 
 
         // 注意：定时任务在凌晨4点执行，所以拉取的数据都是昨天的
         // 因此 "今日" 数据实际上统计的是昨天，需要时间往前推一天
-        LocalDateTime startOfDay = TimeSimulation.now().minusDays(1).toLocalDate().atStartOfDay();
-        LocalDateTime thirtyDaysAgo = TimeSimulation.now().minusDays(31);
+        LocalDate yesterdayDate = now.minusDays(1).toLocalDate();
+        LocalDateTime yesterdayStart = yesterdayDate.atStartOfDay();
+        LocalDateTime yesterdayEnd = yesterdayDate.plusDays(1).atStartOfDay();
+        
+        LocalDate todayDate = now.toLocalDate();
+        LocalDateTime todayStart = todayDate.atStartOfDay();
+        LocalDateTime todayEnd = todayDate.plusDays(1).atStartOfDay();
+        
+        LocalDateTime thirtyDaysAgo = now.minusDays(31);
 
         
         // --- 2. 核心统计数据获取 ---
         Long totalMembers = memberRepository.countTotalMembers();
         Long totalContents = contentSnapshotRepository.count();
-        Long newContentsToday = contentSnapshotRepository.countByPublishTimeAfter(startOfDay);
-        Long newAchievementsToday = achievementStatusRepository.countByAchievedTimeAfter(TimeSimulation.now());
+        Long newContentsToday = contentSnapshotRepository.countByPublishTimeBetween(yesterdayStart, yesterdayEnd);
+        Long newAchievementsToday = achievementStatusRepository.countByAchievedTimeBetween(todayStart, todayEnd);
         Long activeMembers = contentSnapshotRepository.countDistinctMemberIdByPublishTimeAfter(thirtyDaysAgo);
         Double avgDesScore = memberRatingRepository.calculateAverageDesScoreOfLatestRatings();
         String formattedAverageRating = ratingAlgorithm.formatAverageRatingLevel(avgDesScore);
         
         // 打印 DES 分数分布用于调整等级阈值
-        printDesScoreDistribution();
+        // printDesScoreDistribution();
         
         // 计算评级分布百分比
         Map<String, Double> ratingDistribution = calculateRatingDistribution(totalMembers);
