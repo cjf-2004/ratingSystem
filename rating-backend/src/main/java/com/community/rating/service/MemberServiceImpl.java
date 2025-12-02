@@ -42,20 +42,42 @@ public class MemberServiceImpl implements MemberService {
     @Override
     public List<MemberDTO> getMemberRankingList(Integer count, String domain, String sort_by) {
         int limit = (count == null || count <= 0) ? 1 : count;
-
+    
         List<MemberDTO> result = new ArrayList<>();
-
+    
         if (domain != null && !domain.isEmpty()) {
-            // 根据领域名称查到 areaId，然后使用 MemberRatingRepository 按 des_score 排序
+            // 根据领域名称查到 areaId
             Optional<KnowledgeArea> areaOpt = knowledgeAreaRepository.findByAreaName(domain);
             if (areaOpt.isPresent()) {
                 Integer areaId = areaOpt.get().getAreaId();
-                List<MemberRating> ratings = memberRatingRepository.findByAreaIdOrderByDesScoreDesc(areaId);
+                // 获取该领域所有成员的所有评级记录
+                List<MemberRating> allRatings = memberRatingRepository.findByAreaIdOrderByDesScoreDesc(areaId);
+                
+                // 按成员ID分组，只保留每个成员在该领域的最新评级
+                Map<Long, MemberRating> latestRatingsByMember = allRatings.stream()
+                    .collect(Collectors.toMap(
+                        MemberRating::getMemberId,
+                        rating -> rating,
+                        (existing, replacement) -> {
+                            // 保留更新日期较新的记录
+                            if (existing.getUpdateDate() != null && replacement.getUpdateDate() != null) {
+                                return existing.getUpdateDate().isAfter(replacement.getUpdateDate()) ? existing : replacement;
+                            }
+                            return existing; // 处理日期为空的情况
+                        }
+                    ));
+                
+                // 将最新评级转换为列表
+                List<MemberRating> ratings = new ArrayList<>(latestRatingsByMember.values());
+                
+                // 根据排序参数进行排序
                 if ("asc".equalsIgnoreCase(sort_by)) {
-                    ratings = ratings.stream()
-                            .sorted(Comparator.comparing(MemberRating::getDesScore))
-                            .collect(Collectors.toList());
+                    ratings.sort(Comparator.comparing(MemberRating::getDesScore, Comparator.nullsLast(BigDecimal::compareTo)));
+                } else {
+                    ratings.sort(Comparator.comparing(MemberRating::getDesScore, Comparator.nullsLast(BigDecimal::compareTo)).reversed());
                 }
+                
+                // 构建结果列表
                 int idx = 1;
                 for (MemberRating r : ratings) {
                     if (result.size() >= limit) break;
@@ -63,35 +85,10 @@ public class MemberServiceImpl implements MemberService {
                     result.add(dto);
                     idx++;
                 }
-                return result;
             }
-            // 找不到领域名称 => 返回空列表
             return result;
         }
-
-        // 全局排名，使用已经存在的 native 查询（combinedRepo）
-        List<Object[]> rows = combinedRepo.findTopMembersRankingData(limit);
-        int idx = 1;
-        for (Object[] row : rows) {
-            MemberDTO dto = new MemberDTO();
-            // row: m.member_id, m.name, ka.area_name, latest_rating.rating_level, latest_rating.des_score
-            dto.setMember_id(((Number) row[0]).longValue());
-            dto.setMember_name((String) row[1]);
-            dto.setMain_domain(row[2] != null ? row[2].toString() : null);
-            dto.setLevel(row[3] != null ? row[3].toString() : null);
-            dto.setScore(row[4] != null ? ((Number) row[4]).intValue() : null);
-            dto.setRank(idx);
-            // try to get join_time from Member entity
-            Optional<Member> memberOpt = memberRepository.findById(dto.getMember_id());
-            memberOpt.ifPresent(m -> dto.setJoin_time(m.getJoinDate().format(DateTimeFormatter.ISO_LOCAL_DATE)));
-            result.add(dto);
-            idx++;
-        }
-
-        if ("asc" .equalsIgnoreCase(sort_by)) {
-            result = result.stream().sorted(Comparator.comparing(MemberDTO::getScore, Comparator.nullsLast(Integer::compareTo))).collect(Collectors.toList());
-        }
-
+        // 找不到领域名称 => 返回空列表
         return result;
     }
 
