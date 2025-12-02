@@ -1,7 +1,5 @@
 package com.community.rating.simulation;
 
-import org.springframework.cglib.core.Local;
-
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
@@ -26,11 +24,12 @@ public class TimeSimulation {
     }
 
     // ---- 虚拟时间 ----
-    private static class VirtualTimeProvider {
+    public static class VirtualTimeProvider {
         private static final String STORE_FOLDER = "./simulation";
         private static final String STORE_FILE = "virtual_time.txt";
 
-        private static final int SPEED_MULTIPLIER = 60 * 24 * 60 / 120; // 120 秒推进 1 天
+        public static final int SECONDS_OF_SIMULATION_DAY = 20;
+        private static final int SPEED_MULTIPLIER = 60 * 24 * 60 / SECONDS_OF_SIMULATION_DAY; // 120 秒推进 1 天
 
         private static final DateTimeFormatter FMT = DateTimeFormatter.ISO_LOCAL_DATE_TIME;
         private static final Path STORE_DIR = Paths.get(STORE_FOLDER);

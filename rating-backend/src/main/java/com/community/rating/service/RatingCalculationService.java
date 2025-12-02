@@ -102,7 +102,7 @@ public class RatingCalculationService {
         int currentHour = now.getHour();
         
         // 检查虚拟时间是否在凌晨 4 点，且这是新的一天
-        if (currentHour == 4 && !currentDate.equals(lastExecutionDate)) {
+        if (currentHour >= 4 && !currentDate.equals(lastExecutionDate)) {
             log.info("【虚拟时间定时触发】检测到虚拟时间凌晨 4 点: {}", now);
             lastExecutionDate = currentDate;
             executeDailyRatingCalculation();

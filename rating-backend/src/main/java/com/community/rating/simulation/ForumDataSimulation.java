@@ -2,7 +2,6 @@ package com.community.rating.simulation;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.fasterxml.jackson.datatype.jsr310.deser.LocalDateTimeDeserializer;
 import com.fasterxml.jackson.datatype.jsr310.ser.LocalDateTimeSerializer;
@@ -17,7 +16,6 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
-import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
@@ -52,7 +50,7 @@ public class ForumDataSimulation {
     // 生成用户量
     private static final int SIMULATE_USER_COUNT = 2000;
     // 是否为读取模式
-    public static final boolean IS_LOAD_MODE = false;
+    public static final boolean IS_LOAD_MODE = true;
     // 模拟行为文件夹
     private static final String SIMULATION_DATA_FOLDER = "./simulation/";
     // 模拟行为文件
@@ -357,7 +355,7 @@ public class ForumDataSimulation {
     }
 
     // 持续生成方法
-    @Scheduled(initialDelay = 15, fixedRate = 30, timeUnit = TimeUnit.SECONDS) // 每1分钟执行一次
+    @Scheduled(initialDelay = 15, fixedRate = TimeSimulation.VirtualTimeProvider.SECONDS_OF_SIMULATION_DAY, timeUnit = TimeUnit.SECONDS) // 每1分钟执行一次
     private void simulateDailyUpdates() {
         LocalDateTime now = TimeSimulation.now();
         LocalDate nowDate = now.toLocalDate();
