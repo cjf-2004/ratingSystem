@@ -1,6 +1,8 @@
 package com.community.rating.simulation;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.fasterxml.jackson.datatype.jsr310.deser.LocalDateTimeDeserializer;
 import com.fasterxml.jackson.datatype.jsr310.ser.LocalDateTimeSerializer;
@@ -177,36 +179,36 @@ public class ForumDataSimulation {
     );
 
     // 唯一 ID 生成器
-    private final AtomicLong memberIdCounter = new AtomicLong(103);
+    private final AtomicLong memberIdCounter = new AtomicLong(100);
     private final AtomicLong contentIdCounter = new AtomicLong(200);
     private final AtomicLong eventIdCounter = new AtomicLong(1);
 
     // 内部数据实体定义 (使用 Record 模拟)
     // MemberRecord 匹配 Member 表, 多了对应的
     private record MemberRecord(
-            long id,
-            String name,
-            LocalDateTime joinDate,
-            int behaviorIndex,
-            List<String> domains,
-            int postCountBase
+            @JsonProperty("id") long id,
+            @JsonProperty("name") String name,
+            @JsonProperty("join") LocalDateTime joinDate,
+            @JsonProperty("behaviour") int behaviorIndex,
+            @JsonProperty("domains") List<String> domains,
+            @JsonProperty("post") int postCountBase
     ) {}
 
     // ContentRecord 匹配 ContentSnapshot 表（不含 cis_score）
     private record ContentRecord(
-            long id,
-            long authorId,
-            String title,
-            LocalDateTime publishTime,
-            String knowledgeTag,         // knowledge_tag
-            int postLengthLevel,         // post_length_level (1, 2, 3)
+            @JsonProperty("id") long id,
+            @JsonProperty("author") long authorId,
+            @JsonProperty("title") String title,
+            @JsonProperty("time") LocalDateTime publishTime,
+            @JsonProperty("tag") String knowledgeTag,         // knowledge_tag
+            @JsonProperty("length") int postLengthLevel,         // post_length_level (1, 2, 3)
             // 快照计数器，用于实时累积
-            long readCount,        // read_count_snapshot
-            long likeCount,        // like_count_snapshot
-            long commentCount,     // comment_count_snapshot
-            long shareCount,       // share_count_snapshot
-            long collectCount,     // collect_count_snapshot
-            long hateCount         // hate_count_snapshot
+            @JsonProperty("read") long readCount,        // read_count_snapshot
+            @JsonProperty("like") long likeCount,        // like_count_snapshot
+            @JsonProperty("comment") long commentCount,     // comment_count_snapshot
+            @JsonProperty("share") long shareCount,       // share_count_snapshot
+            @JsonProperty("collect") long collectCount,     // collect_count_snapshot
+            @JsonProperty("hate") long hateCount         // hate_count_snapshot
     ) {}
 
     // InteractionType 扩展为 6 种类型
@@ -543,12 +545,13 @@ public class ForumDataSimulation {
         javaTimeModule.addDeserializer(
                 LocalDateTime.class, new LocalDateTimeDeserializer(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
         objectMapper.registerModule(javaTimeModule);
+//        objectMapper.enable(SerializationFeature.INDENT_OUTPUT);
 //        objectMapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
     }
 
     private void saveToFile() {
-        try {
-            objectMapper.writeValue(new FileOutputStream(SIMULATION_DATA_FILE), fullSaveData);
+        try(FileOutputStream fos = new FileOutputStream(SIMULATION_DATA_FILE)) {
+            objectMapper.writeValue(fos, fullSaveData);
             log.info("模拟数据已保存到 {} 文件。", SIMULATION_DATA_FILE);
         } catch (Exception e) {
             log.error("保存模拟数据时出错: {}", e.getMessage());
@@ -556,8 +559,8 @@ public class ForumDataSimulation {
     }
 
     private void loadFromFile() {
-        try {
-            SimulationSaveData saveData = objectMapper.readValue(new FileInputStream(SIMULATION_DATA_FILE), SimulationSaveData.class);
+        try(FileInputStream fis = new FileInputStream(SIMULATION_DATA_FILE)) {
+            SimulationSaveData saveData = objectMapper.readValue(fis, SimulationSaveData.class);
             for (MemberRecord member : saveData.members) {
                 memberDB.put(member.id, member);
             }
@@ -567,6 +570,11 @@ public class ForumDataSimulation {
             }
             fullSaveData.contents.addAll(saveData.contents);
             fullSaveData.timestamp = saveData.timestamp;
+            // 恢复 ID 计数器
+            memberIdCounter.set(
+                    saveData.members.stream().mapToLong(m -> m.id).max().orElse(100));
+            contentIdCounter.set(
+                    saveData.contents.stream().mapToLong(c -> c.id).max().orElse(200));
             log.info("模拟数据已从 {} 文件加载, 保存时间: {}。", SIMULATION_DATA_FILE, saveData.timestamp);
         } catch (Exception e) {
             log.error("加载模拟数据时出错: {}", e.getMessage());
@@ -848,26 +856,24 @@ public class ForumDataSimulation {
         // 将num均分到各元素上，返回分布列表
         public int[] getDistributeList(int num) {
             int[] distributes = new int[this.size()];
-            // 先分配可整除的部分
-            int count = num / totalWeight;
-            int remain = num % totalWeight;
+
+            // 存储小数部分及其索引
+            List<Pair<Integer, Double>> fractionalParts = new ArrayList<>();
+            int remain = num;
+            double base = (double) num / totalWeight;
             for (int i = 0; i < this.size(); i++) {
-                distributes[i] = weights.get(i) * count;
+                double exact = weights.get(i) * base;
+                int floor = (int) Math.floor(exact);
+                distributes[i] = floor;
+                remain -= floor;
+                double fractional = exact - floor;
+                fractionalParts.add(new Pair<>(i, fractional));
             }
-            // 然后分配剩余部分
-            if (remain > 0) {
-                List<Pair<Integer, Double>> fractionalParts = new ArrayList<>();
-                for (int i = 0; i < this.size(); i++) {
-                    double exact = (weights.get(i) * (num / (double) totalWeight));
-                    double fractional = exact - Math.floor(exact);
-                    fractionalParts.add(new Pair<>(i, fractional));
-                }
-                // 按小数部分排序，优先分配给小数部分大的
-                fractionalParts.sort((a, b) -> Double.compare(b.b, a.b));
-                for (int i = 0; i < remain; i++) {
-                    int index = fractionalParts.get(i).a;
-                    distributes[index] += 1;
-                }
+            // 按小数部分排序，优先分配给小数部分大的
+            fractionalParts.sort((a, b) -> Double.compare(b.b, a.b));
+            for (int i = 0; i < remain; i++) {
+                int index = fractionalParts.get(i).a;
+                distributes[index] += 1;
             }
 
             return distributes;
