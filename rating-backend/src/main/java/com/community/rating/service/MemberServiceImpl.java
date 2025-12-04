@@ -88,7 +88,28 @@ public class MemberServiceImpl implements MemberService {
             }
             return result;
         }
-        // 找不到领域名称 => 返回空列表
+        // 全局排名，使用已经存在的 native 查询（combinedRepo）
+        List<Object[]> rows = combinedRepo.findTopMembersRankingData(limit);
+        int idx = 1;
+        for (Object[] row : rows) {
+            MemberDTO dto = new MemberDTO();
+            // row: m.member_id, m.name, ka.area_name, latest_rating.rating_level, latest_rating.des_score
+            dto.setMember_id(((Number) row[0]).longValue());
+            dto.setMember_name((String) row[1]);
+            dto.setMain_domain(row[2] != null ? row[2].toString() : null);
+            dto.setLevel(row[3] != null ? row[3].toString() : null);
+            dto.setScore(row[4] != null ? ((Number) row[4]).intValue() : null);
+            dto.setRank(idx);
+            // try to get join_time from Member entity
+            Optional<Member> memberOpt = memberRepository.findById(dto.getMember_id());
+            memberOpt.ifPresent(m -> dto.setJoin_time(m.getJoinDate().format(DateTimeFormatter.ISO_LOCAL_DATE)));
+            result.add(dto);
+            idx++;
+        }
+
+        if ("asc" .equalsIgnoreCase(sort_by)) {
+            result = result.stream().sorted(Comparator.comparing(MemberDTO::getScore, Comparator.nullsLast(Integer::compareTo))).collect(Collectors.toList());
+        }
         return result;
     }
 
